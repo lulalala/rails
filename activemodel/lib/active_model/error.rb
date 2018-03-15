@@ -16,19 +16,25 @@ module ActiveModel
       @attribute = attribute
       @options = options
 
+      # Evaluate proc first
+      if type.respond_to?(:call)
+        type = type.call(base, options)
+      end
+      if options[:message].respond_to?(:call)
+        options[:message] = options[:message].call(base, options)
+      end
+
       # Determine type from `type` or `options`
       if type.is_a?(Symbol)
         @type = type
       else
-        message = type
-      end
+        if options[:message].is_a?(Symbol)
+          @type = options.delete(:message)
+        end
 
-      if options[:message].is_a?(Symbol)
-        @type ||= options.delete(:message)
-      end
-
-      if message
-        options[:message] = message
+        if type.is_a? String
+          options[:message] = type
+        end
       end
 
       @type ||= :invalid
@@ -79,12 +85,8 @@ module ActiveModel
 
       key = defaults.shift
       value = (@attribute != :base ? @base.send(:read_attribute_for_validation, @attribute) : nil)
-
       if options[:message]
         defaults = options.delete(:message)
-        if defaults.respond_to?(:call)
-          defaults = defaults.call(self, options)
-        end
       end
 
       i18n_options = {
@@ -92,11 +94,7 @@ module ActiveModel
         model: @base.model_name.human,
         attribute: humanized_attribute,
         value: value,
-        object: @base,
-        exception_handler: ->(exception, locale, key, option) {
-          rails_errors = @base.errors
-          rails_errors.full_message(@attribute, rails_errors.generate_message(@attribute, type, options))
-        }
+        object: @base
       }.merge!(options)
 
       I18n.translate(key, i18n_options)
