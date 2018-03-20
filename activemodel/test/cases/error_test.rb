@@ -35,48 +35,6 @@ class ErrorTest < ActiveModel::TestCase
     assert_equal({:foo => :bar}, error.options)
   end
 
-  test "initialize type with Proc, which evaluates to String" do
-    message = Proc.new { "cannot be blank" }
-    error = ActiveModel::Error.new(Person.new, :name, message)
-    assert_equal :invalid, error.type
-    assert_equal "cannot be blank", error.options[:message]
-  end
-
-  test "initialize type with Proc, which evaluates to Symbol" do
-    message = Proc.new { :blank }
-    error = ActiveModel::Error.new(Person.new, :name, message)
-    assert_equal :blank, error.type
-    assert_equal false, error.options.key?(:message)
-  end
-
-  test "initialize options[:message] as Proc, which evaluates to String" do
-    message = Proc.new { "cannot be blank" }
-    error = ActiveModel::Error.new(Person.new, :name, :blank, message: message)
-    assert_equal :blank, error.type
-    assert_equal "cannot be blank", error.options[:message]
-  end
-
-  test "initialize options[:message] as Proc, which evaluates to String, where type is nil" do
-    message = Proc.new { "cannot be blank" }
-    error = ActiveModel::Error.new(Person.new, :name, message: message)
-    assert_equal :invalid, error.type
-    assert_equal "cannot be blank", error.options[:message]
-  end
-
-  test "initialize options[:message] as Proc, which evaluates to Symbol, where type is nil" do
-    message = Proc.new { :empty }
-    error = ActiveModel::Error.new(Person.new, :name, message: message)
-    assert_equal :empty, error.type
-    assert_equal false, error.options.key?(:message)
-  end
-
-  test "initialize type with String" do
-    message = "cannot be blank"
-    error = ActiveModel::Error.new(Person.new, :name, message)
-    assert_equal :invalid, error.type
-    assert_equal message, error.options[:message]
-  end
-
   test "initialize without type" do
     error = ActiveModel::Error.new(Person.new, :name)
     assert_equal :invalid, error.type
@@ -173,18 +131,6 @@ class ErrorTest < ActiveModel::TestCase
 
   test "message with options[:message] as custom message" do
     error = ActiveModel::Error.new(Person.new, :name, :blank, message: 'cannot be blank')
-    assert_equal "cannot be blank", error.message
-  end
-
-  test "message with type as a proc" do
-    message = Proc.new { "cannot be blank" }
-    error = ActiveModel::Error.new(Person.new, :name, message: message)
-    assert_equal "cannot be blank", error.message
-  end
-
-  test "message with options[:message] as a proc" do
-    message = Proc.new { "cannot be blank" }
-    error = ActiveModel::Error.new(Person.new, :name, message: message)
     assert_equal "cannot be blank", error.message
   end
 

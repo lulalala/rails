@@ -14,30 +14,14 @@ module ActiveModel
     def initialize(base, attribute, type = nil, **options)
       @base = base
       @attribute = attribute
+      @type = type || :invalid
       @options = options
+    end
 
-      # Evaluate proc first
-      if type.respond_to?(:call)
-        type = type.call(base, options)
-      end
-      if options[:message].respond_to?(:call)
-        options[:message] = options[:message].call(base, options)
-      end
-
-      # Determine type from `type` or `options`
-      if type.is_a?(Symbol)
-        @type = type
-      else
-        if options[:message].is_a?(Symbol)
-          @type = options.delete(:message)
-        end
-
-        if type.is_a? String
-          options[:message] = type
-        end
-      end
-
-      @type ||= :invalid
+    def initialize_dup(other)
+      @attribute = @attribute.dup
+      @type = @type.dup
+      @options = @options.deep_dup
     end
 
     attr_reader :base, :attribute, :type, :options
