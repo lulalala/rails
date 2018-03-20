@@ -52,28 +52,28 @@ class ErrorTest < ActiveModel::TestCase
 
   test 'match? handles mixed condition' do
     subject = ActiveModel::Error.new(self, :mineral, :not_enough, count: 2)
-    assert_equal false,subject.match?(:attribute => :mineral, :type => :too_coarse)
-    assert_equal true,subject.match?(:attribute => :mineral, :type => :not_enough)
-    assert_equal true,subject.match?(:attribute => :mineral, :type => :not_enough, count: 2)
-    assert_equal false,subject.match?(:attribute => :mineral, :type => :not_enough, count: 1)
+    assert_equal false, subject.match?(:mineral, :too_coarse)
+    assert_equal true, subject.match?(:mineral, :not_enough)
+    assert_equal true, subject.match?(:mineral, :not_enough, count: 2)
+    assert_equal false, subject.match?(:mineral, :not_enough, count: 1)
   end
 
   test 'match? handles attribute match' do
     subject = ActiveModel::Error.new(self, :mineral, :not_enough, count: 2)
-    assert_equal false,subject.match?(:attribute => :foo)
-    assert_equal true,subject.match?(:attribute => :mineral)
+    assert_equal false, subject.match?(:foo)
+    assert_equal true, subject.match?(:mineral)
   end
 
   test 'match? handles error type match' do
     subject = ActiveModel::Error.new(self, :mineral, :not_enough, count: 2)
-    assert_equal false,subject.match?(:type => :too_coarse)
-    assert_equal true,subject.match?(:type => :not_enough)
+    assert_equal false, subject.match?(:mineral, :too_coarse)
+    assert_equal true, subject.match?(:mineral, :not_enough)
   end
 
   test 'match? handles extra options match' do
     subject = ActiveModel::Error.new(self, :mineral, :not_enough, count: 2)
-    assert_equal false,subject.match?(:count => 1)
-    assert_equal true,subject.match?(:count => 2)
+    assert_equal false, subject.match?(:mineral, :not_enough, count: 1)
+    assert_equal true, subject.match?(:mineral, :not_enough, count: 2)
   end
 
   # message
@@ -125,7 +125,7 @@ class ErrorTest < ActiveModel::TestCase
   end
 
   test "message with type as custom message" do
-    error = ActiveModel::Error.new(Person.new, :name, 'cannot be blank')
+    error = ActiveModel::Error.new(Person.new, :name, message: 'cannot be blank')
     assert_equal "cannot be blank", error.message
   end
 
@@ -156,7 +156,7 @@ class ErrorTest < ActiveModel::TestCase
   # full_message
 
   test "full_message returns the given message when attribute is :base" do
-    error = ActiveModel::Error.new(Person.new, :base, "press the button")
+    error = ActiveModel::Error.new(Person.new, :base, message: "press the button")
     assert_equal "press the button", error.full_message
   end
 

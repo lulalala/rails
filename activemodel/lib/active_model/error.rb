@@ -95,19 +95,14 @@ module ActiveModel
         message: message)
     end
 
-    # @param (see Errors#where)
     # @return [Boolean] whether error matches the params
-    def match?(params)
-      if params.key?(:attribute) && @attribute != params[:attribute]
+    def match?(attribute, type = nil, **options)
+      if @attribute != attribute || (type && @type != type)
         return false
       end
 
-      if params.key?(:type) && @type != params[:type]
-        return false
-      end
-
-      (params.keys - [:attribute, :type]).each do |key|
-        if @options[key] != params[key]
+      options.each do |key, value|
+        if @options[key] != value
           return false
         end
       end
