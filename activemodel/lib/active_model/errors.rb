@@ -163,9 +163,11 @@ module ActiveModel
     #   person.errors[:name]        # => []
     def delete(attribute, type = nil, **options)
       attribute, type, options = normalize_arguments(attribute, type, options)
-      @errors.delete_if do |error|
-        error.match?(attribute, type, options)
+      matches = where(attribute, type, options)
+      matches.each do |error|
+        @errors.delete(error)
       end
+      matches.map(&:message)
     end
 
     # When passed a symbol or a name of a method, returns an array of errors

@@ -411,6 +411,12 @@ class ErrorsTest < ActiveModel::TestCase
     assert !errors.added?(:name)
   end
 
+  test "delete returns the deleted messages" do
+    errors = ActiveModel::Errors.new(Person.new)
+    errors.add(:name, :invalid)
+    assert_equal ["is invalid"], errors.delete(:name)
+  end
+
   test "copy errors" do
     errors = ActiveModel::Errors.new(Person.new)
     errors.add(:name, :invalid)
