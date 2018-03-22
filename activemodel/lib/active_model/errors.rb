@@ -107,7 +107,7 @@ module ActiveModel
     # providing access to original error object.
     # If attribute or type needs to be overriden, use `override_options`.
     #
-    # @param override_options [Hash]
+    # override_options - Hash
     # @option override_options [Symbol] :attribute Override the attribute the error belongs to
     # @option override_options [Symbol] :type Override type of the error.
     def import(error, override_options = {})
@@ -128,10 +128,13 @@ module ActiveModel
       }
     end
 
-    # @param attribute [Symbol] Filtering on attribute the error belongs to
-    # @param type [Symbol] Filter on type of error
+    # Search for errors matching +attribute+, +type+ or +options+.
     #
-    # @return [Array(ActiveModel::Error)] matching {Error}.
+    # Only supplied params will be matched.
+    #
+    #   person.errors.where(:name) # => all name errors.
+    #   person.errors.where(:name, :too_short) # => all name errors being too short
+    #   person.errors.where(:name, :too_short, minimum: 2) # => all name errors being too short and minimum is 2
     def where(attribute, type = nil, **options)
       attribute, type, options = normalize_arguments(attribute, type, options)
       @errors.select {|error|

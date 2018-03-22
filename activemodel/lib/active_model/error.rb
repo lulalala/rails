@@ -1,15 +1,9 @@
 # frozen_string_literal: true
 
 module ActiveModel
+  # == Active \Model \Error
+  #
   # Represents one single error
-  # @!attribute [r] base
-  #   @return [ActiveModel::Base] the object which the error belongs to
-  # @!attribute [r] attribute
-  #   @return [Symbol] attribute of the object which the error belongs to
-  # @!attribute [r] type
-  #   @return [Symbol] error's type
-  # @!attribute [r] options
-  #   @return [Hash] additional options
   class Error
     def initialize(base, attribute, type = nil, **options)
       @base = base
@@ -95,7 +89,7 @@ module ActiveModel
         message: message)
     end
 
-    # @return [Boolean] whether error matches the params
+    # See if error matches provided +attribute+, +type+ and +options+.
     def match?(attribute, type = nil, **options)
       if @attribute != attribute || (type && @type != type)
         return false
