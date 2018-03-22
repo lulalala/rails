@@ -153,6 +153,8 @@ module ActiveModel
         error.match?(attribute.to_sym)
       }
     end
+    alias :has_key? :include?
+    alias :key? :include?
 
     # Delete messages for +key+. Returns the deleted messages.
     #
@@ -173,6 +175,24 @@ module ActiveModel
     #   person.errors['name'] # => ["cannot be nil"]
     def [](attribute)
       where(attribute.to_sym).map { |error| error.message }
+    end
+
+    # Returns all message values.
+    #
+    #   person.errors.messages # => {:name=>["cannot be nil", "must be specified"]}
+    #   person.errors.values   # => [["cannot be nil", "must be specified"]]
+    def values
+      @errors.map(&:message)
+    end
+
+    # Returns all message keys.
+    #
+    #   person.errors.messages # => {:name=>["cannot be nil", "must be specified"]}
+    #   person.errors.keys     # => [:name]
+    def keys
+      keys = @errors.map(&:attribute)
+      keys.uniq!
+      keys
     end
 
     # TODO: Maybe we can remove this?
@@ -219,6 +239,21 @@ module ActiveModel
           hash[error.attribute] << message
         else
           hash[error.attribute] = [message]
+        end
+      end
+      hash
+    end
+    alias :messages :to_hash
+    
+    def details
+      hash = {}
+      @errors.each do |error|
+        detail = normalize_detail(error.type, error.options)
+
+        if hash.has_key?(error.attribute)
+          hash[error.attribute] << detail
+        else
+          hash[error.attribute] = [detail]
         end
       end
       hash
@@ -326,6 +361,75 @@ module ActiveModel
       where(attribute).map(&:full_message)
     end
 
+    # Returns a full message for a given attribute.
+    #
+    #   person.errors.full_message(:name, 'is invalid') # => "Name is invalid"
+    def full_message(attribute, message)
+      return message if attribute == :base
+      attr_name = attribute.to_s.tr(".", "_").humanize
+      attr_name = @base.class.human_attribute_name(attribute, default: attr_name)
+      I18n.t(:"errors.format",
+        default:  "%{attribute} %{message}",
+        attribute: attr_name,
+        message:   message)
+    end
+
+    # Translates an error message in its default scope
+    # (<tt>activemodel.errors.messages</tt>).
+    #
+    # Error messages are first looked up in <tt>activemodel.errors.models.MODEL.attributes.ATTRIBUTE.MESSAGE</tt>,
+    # if it's not there, it's looked up in <tt>activemodel.errors.models.MODEL.MESSAGE</tt> and if
+    # that is not there also, it returns the translation of the default message
+    # (e.g. <tt>activemodel.errors.messages.MESSAGE</tt>). The translated model
+    # name, translated attribute name and the value are available for
+    # interpolation.
+    #
+    # When using inheritance in your models, it will check all the inherited
+    # models too, but only if the model itself hasn't been found. Say you have
+    # <tt>class Admin < User; end</tt> and you wanted the translation for
+    # the <tt>:blank</tt> error message for the <tt>title</tt> attribute,
+    # it looks for these translations:
+    #
+    # * <tt>activemodel.errors.models.admin.attributes.title.blank</tt>
+    # * <tt>activemodel.errors.models.admin.blank</tt>
+    # * <tt>activemodel.errors.models.user.attributes.title.blank</tt>
+    # * <tt>activemodel.errors.models.user.blank</tt>
+    # * any default you provided through the +options+ hash (in the <tt>activemodel.errors</tt> scope)
+    # * <tt>activemodel.errors.messages.blank</tt>
+    # * <tt>errors.attributes.title.blank</tt>
+    # * <tt>errors.messages.blank</tt>
+    def generate_message(attribute, type = :invalid, options = {})
+      type = options.delete(:message) if options[:message].is_a?(Symbol)
+
+      if @base.class.respond_to?(:i18n_scope)
+        i18n_scope = @base.class.i18n_scope.to_s
+        defaults = @base.class.lookup_ancestors.flat_map do |klass|
+          [ :"#{i18n_scope}.errors.models.#{klass.model_name.i18n_key}.attributes.#{attribute}.#{type}",
+            :"#{i18n_scope}.errors.models.#{klass.model_name.i18n_key}.#{type}" ]
+        end
+        defaults << :"#{i18n_scope}.errors.messages.#{type}"
+      else
+        defaults = []
+      end
+
+      defaults << :"errors.attributes.#{attribute}.#{type}"
+      defaults << :"errors.messages.#{type}"
+
+      key = defaults.shift
+      defaults = options.delete(:message) if options[:message]
+      value = (attribute != :base ? @base.send(:read_attribute_for_validation, attribute) : nil)
+
+      options = {
+        default: defaults,
+        model: @base.model_name.human,
+        attribute: @base.class.human_attribute_name(attribute),
+        value: value,
+        object: @base
+      }.merge!(options)
+
+      I18n.translate(key, options)
+    end
+
     def marshal_dump # :nodoc:
       # TODO: Should this work for past serialized results?
       [@base, without_default_proc(@messages), without_default_proc(@details)]
@@ -339,6 +443,10 @@ module ActiveModel
     end
 
   private
+
+    def normalize_detail(message, options)
+      { error: message }.merge(options.except(*CALLBACKS_OPTIONS + MESSAGE_OPTIONS))
+    end
 
     def without_default_proc(hash)
       hash.dup.tap do |new_h|

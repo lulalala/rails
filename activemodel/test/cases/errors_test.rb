@@ -31,10 +31,10 @@ class ErrorsTest < ActiveModel::TestCase
   end
 
   def test_delete
-    errors = ActiveModel::Errors.new(self)
-    errors[:foo] << "omg"
-    errors.delete("foo")
-    assert_empty errors[:foo]
+    errors = ActiveModel::Errors.new(Person.new)
+    errors.add(:name)
+    errors.delete("name")
+    assert_empty errors[:name]
   end
 
   def test_include?
@@ -45,10 +45,34 @@ class ErrorsTest < ActiveModel::TestCase
   end
 
   def test_dup
-    errors = ActiveModel::Errors.new(self)
-    errors[:foo] << "bar"
+    errors = ActiveModel::Errors.new(Person.new)
+    errors.add(:name)
     errors_dup = errors.dup
     assert_not_same errors_dup.errors, errors.errors
+  end
+
+  def test_has_key?
+    errors = ActiveModel::Errors.new(self)
+    errors.add(:foo, "omg")
+    assert_equal true, errors.has_key?(:foo), "errors should have key :foo"
+    assert_equal true, errors.has_key?("foo"), "errors should have key 'foo' as :foo"
+  end
+
+  def test_has_no_key
+    errors = ActiveModel::Errors.new(self)
+    assert_equal false, errors.has_key?(:name), "errors should not have key :name"
+  end
+
+  def test_key?
+    errors = ActiveModel::Errors.new(self)
+    errors.add(:foo, "omg")
+    assert_equal true, errors.key?(:foo), "errors should have key :foo"
+    assert_equal true, errors.key?("foo"), "errors should have key 'foo' as :foo"
+  end
+
+  def test_no_key
+    errors = ActiveModel::Errors.new(self)
+    assert_equal false, errors.key?(:name), "errors should not have key :name"
   end
 
   test "clear errors" do
@@ -67,12 +91,51 @@ class ErrorsTest < ActiveModel::TestCase
     assert_equal ["omg"], errors["name"]
   end
 
+  test "values returns an array of messages" do
+    errors = ActiveModel::Errors.new(Person.new)
+    errors.add(:name, "omg")
+    errors.add(:name, "zomg")
+
+    assert_equal ["omg", "zomg"], errors.values
+  end
+
+  test "values returns an empty array after try to get a message only" do
+    errors = ActiveModel::Errors.new(self)
+    errors.messages[:foo]
+    errors.messages[:baz]
+
+    assert_equal [], errors.values
+  end
+
+  test "keys returns the error keys" do
+    errors = ActiveModel::Errors.new(Person.new)
+    errors.add(:name)
+    errors.add(:age)
+
+    assert_equal [:name, :age], errors.keys
+  end
+
+  test "keys returns an empty array after try to get a message only" do
+    errors = ActiveModel::Errors.new(self)
+    errors.messages[:foo]
+    errors.messages[:baz]
+
+    assert_equal [], errors.keys
+  end
+
   test "detecting whether there are errors with empty?, blank?, include?" do
     person = Person.new
     person.errors[:foo]
     assert_empty person.errors
     assert_predicate person.errors, :blank?
     assert_not_includes person.errors, :foo
+  end
+
+  test "include? does not add a key to messages hash" do
+    person = Person.new
+    person.errors.include?(:foo)
+
+    assert_not person.errors.messages.key?(:foo)
   end
 
   test "adding errors using conditionals with Person#validate!" do
@@ -282,6 +345,17 @@ class ErrorsTest < ActiveModel::TestCase
     assert_equal [], person.errors.full_messages_for(:email)
   end
 
+  test "full_message returns the given message when attribute is :base" do
+    person = Person.new
+    assert_equal "press the button", person.errors.full_message(:base, "press the button")
+  end
+
+  test "full_message returns the given message with the attribute name included" do
+    person = Person.new
+    assert_equal "name cannot be blank", person.errors.full_message(:name, "cannot be blank")
+    assert_equal "name_test cannot be blank", person.errors.full_message(:name_test, "cannot be blank")
+  end
+
   test "as_json creates a json formatted representation of the errors hash" do
     person = Person.new
     person.validate!
@@ -294,6 +368,40 @@ class ErrorsTest < ActiveModel::TestCase
     person.validate!
 
     assert_equal({ name: ["name cannot be nil"] }, person.errors.as_json(full_messages: true))
+  end
+
+  test "generate_message works without i18n_scope" do
+    person = Person.new
+    assert_not_respond_to Person, :i18n_scope
+    assert_nothing_raised {
+      person.errors.generate_message(:name, :blank)
+    }
+  end
+
+  test "details returns added error detail" do
+    person = Person.new
+    person.errors.add(:name, :invalid)
+    assert_equal({ name: [{ error: :invalid }] }, person.errors.details)
+  end
+
+  test "details returns added error detail with custom option" do
+    person = Person.new
+    person.errors.add(:name, :greater_than, count: 5)
+    assert_equal({ name: [{ error: :greater_than, count: 5 }] }, person.errors.details)
+  end
+
+  test "details do not include message option" do
+    person = Person.new
+    person.errors.add(:name, :invalid, message: "is bad")
+    assert_equal({ name: [{ error: :invalid }] }, person.errors.details)
+  end
+
+  test "dup duplicates details" do
+    errors = ActiveModel::Errors.new(Person.new)
+    errors.add(:name, :invalid)
+    errors_dup = errors.dup
+    errors_dup.add(:name, :taken)
+    assert_not_equal errors_dup.details, errors.details
   end
 
   test "delete removes details on given attribute" do
