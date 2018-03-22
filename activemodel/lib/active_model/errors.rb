@@ -179,6 +179,28 @@ module ActiveModel
       where(attribute.to_sym).map { |error| error.message }
     end
 
+    # Iterates through each error key, value pair in the error messages hash.
+    # Yields the attribute and the error for that attribute. If the attribute
+    # has more than one error message, yields once for each error message.
+    #
+    #   person.errors.add(:name, :blank, message: "can't be blank")
+    #   person.errors.each do |attribute, error|
+    #     # Will yield :name and "can't be blank"
+    #   end
+    #
+    #   person.errors.add(:name, :not_specified, message: "must be specified")
+    #   person.errors.each do |attribute, error|
+    #     # Will yield :name and "can't be blank"
+    #     # then yield :name and "must be specified"
+    #   end
+    def each &block
+      if block.arity == 1
+        @errors.each(&block)
+      else
+        @errors.each { |error| yield error.attribute, error.message }
+      end
+    end
+
     # Returns all message values.
     #
     #   person.errors.messages # => {:name=>["cannot be nil", "must be specified"]}
