@@ -417,6 +417,15 @@ class ErrorsTest < ActiveModel::TestCase
     assert_equal ["is invalid"], errors.delete(:name)
   end
 
+  test "clear removes details" do
+    person = Person.new
+    person.errors.add(:name, :invalid)
+
+    assert_equal 1, person.errors.details.count
+    person.errors.clear
+    assert_empty person.errors.details
+  end
+
   test "copy errors" do
     errors = ActiveModel::Errors.new(Person.new)
     errors.add(:name, :invalid)
@@ -439,5 +448,47 @@ class ErrorsTest < ActiveModel::TestCase
 
     assert(person.errors.added?(:name, :invalid))
     assert(person.errors.added?(:name, :blank))
+  end
+
+  test "errors are marshalable" do
+    errors = ActiveModel::Errors.new(Person.new)
+    errors.add(:name, :invalid)
+    serialized = Marshal.load(Marshal.dump(errors))
+
+    assert_equal Person, serialized.instance_variable_get(:@base).class
+    assert_equal errors.messages, serialized.messages
+    assert_equal errors.details, serialized.details
+  end
+
+  test "errors dumped in Rails 5 are marshal loadable" do
+    # Derived from
+    # errors = ActiveModel::Errors.new(Person.new)
+    # errors.add(:name, :invalid)
+    dump = "\x04\bU:\x18ActiveModel::Errors[\bo:\x17ErrorsTest::Person\x06:\f@errorsU;\x00[\b@\a{\x00{\x00{\x06:\tname[\x06I\"\x0Fis invalid\x06:\x06ET{\x06;\b[\x06{\x06:\nerror:\finvalid"
+    serialized = Marshal.load(dump)
+
+    assert_equal Person, serialized.instance_variable_get(:@base).class
+    assert_equal({:name=>["is invalid"]}, serialized.messages)
+    assert_equal({:name=>[{:error=>:invalid}]}, serialized.details)
+  end
+
+  test "errors are backward compatible with the Rails 4.2 format" do
+    yaml = <<~CODE
+    --- !ruby/object:ActiveModel::Errors
+    base: &1 !ruby/object:ErrorsTest::Person
+      errors: !ruby/object:ActiveModel::Errors
+        base: *1
+        messages: {}
+    messages: {}
+    CODE
+
+    errors = YAML.load(yaml)
+    errors.add(:name, :invalid)
+    assert_equal({ name: ["is invalid"] }, errors.messages)
+    assert_equal({ name: [{ error: :invalid }] }, errors.details)
+
+    errors.clear
+    assert_equal({}, errors.messages)
+    assert_equal({}, errors.details)
   end
 end

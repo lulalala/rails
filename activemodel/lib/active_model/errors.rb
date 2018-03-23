@@ -454,16 +454,16 @@ module ActiveModel
       I18n.translate(key, options)
     end
 
-    def marshal_dump # :nodoc:
-      # TODO: Should this work for past serialized results?
-      [@base, without_default_proc(@messages), without_default_proc(@details)]
-    end
-
     def marshal_load(array) # :nodoc:
-      # TODO: Should this work for past serialized results?
-      @base, @messages, @details = array
-      apply_default_array(@messages)
-      apply_default_array(@details)
+      # Rails 5
+      @errors = []
+      @base = array[0]
+      array[2].each { |attribute, errors|
+        errors.each { |error|
+          type = error.delete(:error)
+          add(attribute, type, error)
+        }
+      }
     end
 
   private
