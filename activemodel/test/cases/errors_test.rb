@@ -96,7 +96,9 @@ class ErrorsTest < ActiveModel::TestCase
     errors.add(:name, "omg")
     errors.add(:name, "zomg")
 
-    assert_equal ["omg", "zomg"], errors.values
+    assert_deprecated do
+      assert_equal ["omg", "zomg"], errors.values
+    end
   end
 
   test "values returns an empty array after try to get a message only" do
@@ -104,7 +106,9 @@ class ErrorsTest < ActiveModel::TestCase
     errors.messages[:foo]
     errors.messages[:baz]
 
-    assert_equal [], errors.values
+    assert_deprecated do
+      assert_equal [], errors.values
+    end
   end
 
   test "keys returns the error keys" do
@@ -112,7 +116,9 @@ class ErrorsTest < ActiveModel::TestCase
     errors.add(:name)
     errors.add(:age)
 
-    assert_equal [:name, :age], errors.keys
+    assert_deprecated do
+      assert_equal [:name, :age], errors.keys
+    end
   end
 
   test "keys returns an empty array after try to get a message only" do
@@ -120,7 +126,9 @@ class ErrorsTest < ActiveModel::TestCase
     errors.messages[:foo]
     errors.messages[:baz]
 
-    assert_equal [], errors.keys
+    assert_deprecated do
+      assert_equal [], errors.keys
+    end
   end
 
   test "detecting whether there are errors with empty?, blank?, include?" do
@@ -347,13 +355,17 @@ class ErrorsTest < ActiveModel::TestCase
 
   test "full_message returns the given message when attribute is :base" do
     person = Person.new
-    assert_equal "press the button", person.errors.full_message(:base, "press the button")
+    assert_deprecated do
+      assert_equal "press the button", person.errors.full_message(:base, "press the button")
+    end
   end
 
   test "full_message returns the given message with the attribute name included" do
     person = Person.new
-    assert_equal "name cannot be blank", person.errors.full_message(:name, "cannot be blank")
-    assert_equal "name_test cannot be blank", person.errors.full_message(:name_test, "cannot be blank")
+    assert_deprecated do
+      assert_equal "name cannot be blank", person.errors.full_message(:name, "cannot be blank")
+      assert_equal "name_test cannot be blank", person.errors.full_message(:name_test, "cannot be blank")
+    end
   end
 
   test "as_json creates a json formatted representation of the errors hash" do
@@ -373,9 +385,11 @@ class ErrorsTest < ActiveModel::TestCase
   test "generate_message works without i18n_scope" do
     person = Person.new
     assert_not_respond_to Person, :i18n_scope
-    assert_nothing_raised {
-      person.errors.generate_message(:name, :blank)
-    }
+    assert_deprecated do
+      assert_nothing_raised {
+        person.errors.generate_message(:name, :blank)
+      }
+    end
   end
 
   test "details returns added error detail" do

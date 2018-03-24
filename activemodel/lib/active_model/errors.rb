@@ -4,6 +4,7 @@ require "active_support/core_ext/array/conversions"
 require "active_support/core_ext/string/inflections"
 require "active_support/core_ext/object/deep_dup"
 require "active_support/core_ext/string/filters"
+require "active_support/deprecation"
 require "active_model/error"
 require "active_model/nested_error"
 require "forwardable"
@@ -198,6 +199,20 @@ module ActiveModel
       if block.arity == 1
         @errors.each(&block)
       else
+        ActiveSupport::Deprecation.warn(<<-MSG.squish)
+          Enumerating ActiveModel::Errors as a hash has been deprecated.
+          In Rails 6, `errors` is an array of Error objects,
+          therefore it should be accessed by a block with a single block
+          parameter like this:
+
+          person.errors.each do |error|
+            error.full_message
+          end
+
+          You are passing a block expecting 2 parameters,
+          so the old hash behavior is simulated. As this is deprecated,
+          this will result in an ArgumentError in Rails 6.1.
+        MSG
         @errors.each { |error| yield error.attribute, error.message }
       end
     end
@@ -207,6 +222,7 @@ module ActiveModel
     #   person.errors.messages # => {:name=>["cannot be nil", "must be specified"]}
     #   person.errors.values   # => [["cannot be nil", "must be specified"]]
     def values
+      deprecation_removal_warning('values')
       @errors.map(&:message)
     end
 
@@ -215,12 +231,12 @@ module ActiveModel
     #   person.errors.messages # => {:name=>["cannot be nil", "must be specified"]}
     #   person.errors.keys     # => [:name]
     def keys
+      deprecation_removal_warning('keys')
       keys = @errors.map(&:attribute)
       keys.uniq!
       keys
     end
 
-    # TODO: Maybe we can remove this?
     # Returns an xml formatted representation of the Errors hash.
     #
     #   person.errors.add(:name, :blank, message: "can't be blank")
@@ -233,6 +249,7 @@ module ActiveModel
     #   #    <error>name must be specified</error>
     #   #  </errors>
     def to_xml(options = {})
+      deprecation_removal_warning('to_xml')
       to_a.to_xml({ root: "errors", skip_types: true }.merge!(options))
     end
 
@@ -270,6 +287,7 @@ module ActiveModel
     end
     alias :messages :to_hash
     
+    # TODO: Can we deprecate this?
     def details
       hash = {}
       @errors.each do |error|
@@ -390,6 +408,7 @@ module ActiveModel
     #
     #   person.errors.full_message(:name, 'is invalid') # => "Name is invalid"
     def full_message(attribute, message)
+      deprecation_removal_warning('full_message')
       return message if attribute == :base
       attr_name = attribute.to_s.tr(".", "_").humanize
       attr_name = @base.class.human_attribute_name(attribute, default: attr_name)
@@ -424,6 +443,7 @@ module ActiveModel
     # * <tt>errors.attributes.title.blank</tt>
     # * <tt>errors.messages.blank</tt>
     def generate_message(attribute, type = :invalid, options = {})
+      deprecation_removal_warning('generate_message')
       type = options.delete(:message) if options[:message].is_a?(Symbol)
 
       if @base.class.respond_to?(:i18n_scope)
@@ -523,6 +543,10 @@ module ActiveModel
           add(attribute, type, error)
         }
       }
+    end
+
+    def deprecation_removal_warning(method_name)
+      ActiveSupport::Deprecation.warn("ActiveModel::Errors##{method_name} is deprecated and will be removed in Rails 6.1")
     end
   end
 
