@@ -67,6 +67,7 @@ module ActiveModel
 
     CALLBACKS_OPTIONS = [:if, :unless, :on, :allow_nil, :allow_blank, :strict]
     MESSAGE_OPTIONS = [:message]
+    LEGACY_ATTRIBUTES = [:messages, :details].freeze
 
     attr_reader :errors
 
@@ -458,29 +459,27 @@ module ActiveModel
       # Rails 5
       @errors = []
       @base = array[0]
-      array[2].each { |attribute, errors|
-        errors.each { |error|
-          type = error.delete(:error)
-          add(attribute, type, error)
-        }
-      }
+      add_from_legacy_details_hash(array[2])
     end
 
-  private
+    def init_with(coder) # :nodoc:
+      data = coder.map
+
+      data.each { |k, v|
+        next if LEGACY_ATTRIBUTES.include?(k.to_sym)
+        instance_variable_set(:"@#{k}", v)
+      }
+
+      @errors ||= []
+
+      # Legacy support Rails 5.x details hash
+      add_from_legacy_details_hash(data['details']) if data.key?('details')
+    end
+
+    private
 
     def normalize_detail(message, options)
       { error: message }.merge(options.except(*CALLBACKS_OPTIONS + MESSAGE_OPTIONS))
-    end
-
-    def without_default_proc(hash)
-      hash.dup.tap do |new_h|
-        new_h.default_proc = nil
-      end
-    end
-
-    def apply_default_array(hash)
-      hash.default_proc = proc { |h, key| h[key] = [] }
-      hash
     end
 
     # Error type can appear as <tt>type</tt> or <tt>options[:message]</tt>.
@@ -515,6 +514,15 @@ module ActiveModel
       end
 
       [attribute.to_sym, normalized_type, options]
+    end
+
+    def add_from_legacy_details_hash(details)
+      details.each { |attribute, errors|
+        errors.each { |error|
+          type = error.delete(:error)
+          add(attribute, type, error)
+        }
+      }
     end
   end
 

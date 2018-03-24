@@ -460,7 +460,7 @@ class ErrorsTest < ActiveModel::TestCase
     assert_equal errors.details, serialized.details
   end
 
-  test "errors dumped in Rails 5 are marshal loadable" do
+  test "errors are compatible with marshal dumped from Rails 5.x" do
     # Derived from
     # errors = ActiveModel::Errors.new(Person.new)
     # errors.add(:name, :invalid)
@@ -484,6 +484,55 @@ class ErrorsTest < ActiveModel::TestCase
 
     errors = YAML.load(yaml)
     errors.add(:name, :invalid)
+    assert_equal({ name: ["is invalid"] }, errors.messages)
+    assert_equal({ name: [{ error: :invalid }] }, errors.details)
+
+    errors.clear
+    assert_equal({}, errors.messages)
+    assert_equal({}, errors.details)
+  end
+
+  test "errors are compatible with YAML dumped from Rails 5.x" do
+    yaml = <<~CODE
+    --- !ruby/object:ActiveModel::Errors
+    base: &1 !ruby/object:ErrorsTest::Person
+      errors: !ruby/object:ActiveModel::Errors
+        base: *1
+        messages: {}
+        details: {}
+    messages:
+      :name:
+      - is invalid
+    details:
+      :name:
+      - :error: :invalid
+    CODE
+
+    errors = YAML.load(yaml)
+    assert_equal({ name: ["is invalid"] }, errors.messages)
+    assert_equal({ name: [{ error: :invalid }] }, errors.details)
+
+    errors.clear
+    assert_equal({}, errors.messages)
+    assert_equal({}, errors.details)
+  end
+
+  test "errors are compatible with YAML dumped from Rails 6.x" do
+    yaml = <<~CODE
+    --- !ruby/object:ActiveModel::Errors
+    base: &1 !ruby/object:ErrorsTest::Person
+      errors: !ruby/object:ActiveModel::Errors
+        base: *1
+        errors: []
+    errors:
+    - !ruby/object:ActiveModel::Error
+      base: *1
+      attribute: :name
+      type: :invalid
+      options: {}
+    CODE
+
+    errors = YAML.load(yaml)
     assert_equal({ name: ["is invalid"] }, errors.messages)
     assert_equal({ name: [{ error: :invalid }] }, errors.details)
 
