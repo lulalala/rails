@@ -63,7 +63,7 @@ module ActiveModel
     include Enumerable
 
     extend Forwardable
-    def_delegators :@errors, :each, :size, :clear, :blank?, :empty?, *Enumerable.instance_methods(false)
+    def_delegators :@errors, :size, :clear, :blank?, :empty?, *(Enumerable.instance_methods(false) - [:to_a, :include?])
 
     CALLBACKS_OPTIONS = [:if, :unless, :on, :allow_nil, :allow_blank, :strict]
     MESSAGE_OPTIONS = [:message]
