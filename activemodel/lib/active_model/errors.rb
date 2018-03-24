@@ -139,7 +139,7 @@ module ActiveModel
     #   person.errors.where(:name, :too_short, minimum: 2) # => all name errors being too short and minimum is 2
     def where(attribute, type = nil, **options)
       attribute, type, options = normalize_arguments(attribute, type, options)
-      @errors.select {|error|
+      @errors.select { |error|
         error.match?(attribute, type, options)
       }
     end
@@ -151,7 +151,7 @@ module ActiveModel
     #   person.errors.include?(:name) # => true
     #   person.errors.include?(:age)  # => false
     def include?(attribute)
-      @errors.any?{|error|
+      @errors.any? { |error|
         error.match?(attribute.to_sym)
       }
     end
@@ -195,7 +195,7 @@ module ActiveModel
     #     # Will yield :name and "can't be blank"
     #     # then yield :name and "must be specified"
     #   end
-    def each &block
+    def each(&block)
       if block.arity == 1
         @errors.each(&block)
       else
@@ -224,7 +224,7 @@ module ActiveModel
     #   person.errors.messages # => {:name=>["cannot be nil", "must be specified"]}
     #   person.errors.values   # => [["cannot be nil", "must be specified"]]
     def values
-      deprecation_removal_warning('values')
+      deprecation_removal_warning(:values)
       @errors.map(&:message)
     end
 
@@ -233,7 +233,7 @@ module ActiveModel
     #   person.errors.messages # => {:name=>["cannot be nil", "must be specified"]}
     #   person.errors.keys     # => [:name]
     def keys
-      deprecation_removal_warning('keys')
+      deprecation_removal_warning(:keys)
       keys = @errors.map(&:attribute)
       keys.uniq!
       keys
@@ -251,7 +251,7 @@ module ActiveModel
     #   #    <error>name must be specified</error>
     #   #  </errors>
     def to_xml(options = {})
-      deprecation_removal_warning('to_xml')
+      deprecation_removal_warning(:to_xml)
       to_a.to_xml({ root: "errors", skip_types: true }.merge!(options))
     end
 
@@ -288,7 +288,7 @@ module ActiveModel
       hash
     end
     alias :messages :to_hash
-    
+
     # TODO: Can we deprecate this?
     def details
       hash = {}
@@ -372,7 +372,7 @@ module ActiveModel
     #  person.errors.added? :name, "is too long"                            # => false
     def added?(attribute, type = nil, options = {})
       attribute, type, options = normalize_arguments(attribute, type, options)
-      @errors.any?{|error|
+      @errors.any? { |error|
         error.match?(attribute, type, options)
       }
     end
@@ -410,7 +410,7 @@ module ActiveModel
     #
     #   person.errors.full_message(:name, 'is invalid') # => "Name is invalid"
     def full_message(attribute, message)
-      deprecation_removal_warning('full_message')
+      deprecation_removal_warning(:full_message)
       return message if attribute == :base
       attr_name = attribute.to_s.tr(".", "_").humanize
       attr_name = @base.class.human_attribute_name(attribute, default: attr_name)
@@ -445,7 +445,7 @@ module ActiveModel
     # * <tt>errors.attributes.title.blank</tt>
     # * <tt>errors.messages.blank</tt>
     def generate_message(attribute, type = :invalid, options = {})
-      deprecation_removal_warning('generate_message')
+      deprecation_removal_warning(:generate_message)
       type = options.delete(:message) if options[:message].is_a?(Symbol)
 
       if @base.class.respond_to?(:i18n_scope)
@@ -495,61 +495,61 @@ module ActiveModel
       @errors ||= []
 
       # Legacy support Rails 5.x details hash
-      add_from_legacy_details_hash(data['details']) if data.key?('details')
+      add_from_legacy_details_hash(data["details"]) if data.key?("details")
     end
 
     private
 
-    def normalize_detail(message, options)
-      { error: message }.merge(options.except(*CALLBACKS_OPTIONS + MESSAGE_OPTIONS))
-    end
-
-    # Error type can appear as <tt>type</tt> or <tt>options[:message]</tt>.
-    # Message or type can also be dynamic.
-    # This method evaluates them and normalize type/message to the appropriate place.
-    def normalize_arguments(attribute, type, **options)
-      # Evaluate proc first
-      if type.respond_to?(:call)
-        type = type.call(@base, options)
-      end
-      if options[:message].respond_to?(:call)
-        options[:message] = options[:message].call(@base, options)
+      def normalize_detail(message, options)
+        { error: message }.merge(options.except(*CALLBACKS_OPTIONS + MESSAGE_OPTIONS))
       end
 
-      normalized_type = nil
-
-      # Determine type from `type` or `options`
-      if type.is_a?(Symbol)
-        normalized_type = type
-      else
-        if options[:message].is_a?(Symbol)
-          normalized_type = options.delete(:message)
+      # Error type can appear as <tt>type</tt> or <tt>options[:message]</tt>.
+      # Message or type can also be dynamic.
+      # This method evaluates them and normalize type/message to the appropriate place.
+      def normalize_arguments(attribute, type, **options)
+        # Evaluate proc first
+        if type.respond_to?(:call)
+          type = type.call(@base, options)
+        end
+        if options[:message].respond_to?(:call)
+          options[:message] = options[:message].call(@base, options)
         end
 
-        if type.is_a? String
-          options[:message] = type
+        normalized_type = nil
+
+        # Determine type from `type` or `options`
+        if type.is_a?(Symbol)
+          normalized_type = type
+        else
+          if options[:message].is_a?(Symbol)
+            normalized_type = options.delete(:message)
+          end
+
+          if type.is_a? String
+            options[:message] = type
+          end
         end
+
+        if normalized_type
+          normalized_type = normalized_type.to_sym
+        end
+
+        [attribute.to_sym, normalized_type, options]
       end
 
-      if normalized_type
-        normalized_type = normalized_type.to_sym
-      end
-
-      [attribute.to_sym, normalized_type, options]
-    end
-
-    def add_from_legacy_details_hash(details)
-      details.each { |attribute, errors|
-        errors.each { |error|
-          type = error.delete(:error)
-          add(attribute, type, error)
+      def add_from_legacy_details_hash(details)
+        details.each { |attribute, errors|
+          errors.each { |error|
+            type = error.delete(:error)
+            add(attribute, type, error)
+          }
         }
-      }
-    end
+      end
 
-    def deprecation_removal_warning(method_name)
-      ActiveSupport::Deprecation.warn("ActiveModel::Errors##{method_name} is deprecated and will be removed in Rails 6.1")
-    end
+      def deprecation_removal_warning(method_name)
+        ActiveSupport::Deprecation.warn("ActiveModel::Errors##{method_name} is deprecated and will be removed in Rails 6.1")
+      end
   end
 
   # Raised when a validation cannot be corrected by end users and are considered

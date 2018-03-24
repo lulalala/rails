@@ -482,8 +482,8 @@ class ErrorsTest < ActiveModel::TestCase
     serialized = Marshal.load(dump)
 
     assert_equal Person, serialized.instance_variable_get(:@base).class
-    assert_equal({:name=>["is invalid"]}, serialized.messages)
-    assert_equal({:name=>[{:error=>:invalid}]}, serialized.details)
+    assert_equal({ name: ["is invalid"] }, serialized.messages)
+    assert_equal({ name: [{ error: :invalid }] }, serialized.details)
   end
 
   test "errors are backward compatible with the Rails 4.2 format" do
