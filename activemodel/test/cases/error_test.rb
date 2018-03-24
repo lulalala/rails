@@ -32,7 +32,7 @@ class ErrorTest < ActiveModel::TestCase
     assert_equal base, error.base
     assert_equal :name, error.attribute
     assert_equal :too_long, error.type
-    assert_equal({:foo => :bar}, error.options)
+    assert_equal({ foo: :bar }, error.options)
   end
 
   test "initialize without type" do
@@ -50,7 +50,7 @@ class ErrorTest < ActiveModel::TestCase
 
   # match?
 
-  test 'match? handles mixed condition' do
+  test "match? handles mixed condition" do
     subject = ActiveModel::Error.new(self, :mineral, :not_enough, count: 2)
     assert_equal false, subject.match?(:mineral, :too_coarse)
     assert_equal true, subject.match?(:mineral, :not_enough)
@@ -58,19 +58,19 @@ class ErrorTest < ActiveModel::TestCase
     assert_equal false, subject.match?(:mineral, :not_enough, count: 1)
   end
 
-  test 'match? handles attribute match' do
+  test "match? handles attribute match" do
     subject = ActiveModel::Error.new(self, :mineral, :not_enough, count: 2)
     assert_equal false, subject.match?(:foo)
     assert_equal true, subject.match?(:mineral)
   end
 
-  test 'match? handles error type match' do
+  test "match? handles error type match" do
     subject = ActiveModel::Error.new(self, :mineral, :not_enough, count: 2)
     assert_equal false, subject.match?(:mineral, :too_coarse)
     assert_equal true, subject.match?(:mineral, :not_enough)
   end
 
-  test 'match? handles extra options match' do
+  test "match? handles extra options match" do
     subject = ActiveModel::Error.new(self, :mineral, :not_enough, count: 2)
     assert_equal false, subject.match?(:mineral, :not_enough, count: 1)
     assert_equal true, subject.match?(:mineral, :not_enough, count: 2)
@@ -83,31 +83,31 @@ class ErrorTest < ActiveModel::TestCase
     assert_equal "can't be blank", error.message
   end
 
-  test 'message with custom interpolation' do
-    subject = ActiveModel::Error.new(Person.new, :name, :inclusion,message: "custom message %{value}", value: "name")
+  test "message with custom interpolation" do
+    subject = ActiveModel::Error.new(Person.new, :name, :inclusion, message: "custom message %{value}", value: "name")
     assert_equal "custom message name", subject.message
   end
 
-  test 'message returns plural interpolation' do
+  test "message returns plural interpolation" do
     subject = ActiveModel::Error.new(Person.new, :name, :too_long, count: 10)
     assert_equal "is too long (maximum is 10 characters)", subject.message
   end
 
-  test 'message returns singular interpolation' do
+  test "message returns singular interpolation" do
     subject = ActiveModel::Error.new(Person.new, :name, :too_long, count: 1)
     assert_equal "is too long (maximum is 1 character)", subject.message
   end
 
-  test 'message returns count interpolation' do
+  test "message returns count interpolation" do
     subject = ActiveModel::Error.new(Person.new, :name, :too_long, message: "custom message %{count}", count: 10)
     assert_equal "custom message 10", subject.message
   end
 
-  test 'message handles lambda in messages and option values, and i18n interpolation' do
+  test "message handles lambda in messages and option values, and i18n interpolation" do
     subject = ActiveModel::Error.new(Person.new, :name, :invalid,
-      foo: 'foo',
-      bar: 'bar',
-      baz: Proc.new {'baz'},
+      foo: "foo",
+      bar: "bar",
+      baz: Proc.new { "baz" },
       message: Proc.new { |model, options|
         "%{attribute} %{foo} #{options[:bar]} %{baz}"
       }
@@ -125,32 +125,32 @@ class ErrorTest < ActiveModel::TestCase
   end
 
   test "message with type as custom message" do
-    error = ActiveModel::Error.new(Person.new, :name, message: 'cannot be blank')
+    error = ActiveModel::Error.new(Person.new, :name, message: "cannot be blank")
     assert_equal "cannot be blank", error.message
   end
 
   test "message with options[:message] as custom message" do
-    error = ActiveModel::Error.new(Person.new, :name, :blank, message: 'cannot be blank')
+    error = ActiveModel::Error.new(Person.new, :name, :blank, message: "cannot be blank")
     assert_equal "cannot be blank", error.message
   end
 
-  test 'message renders lazily using current locale' do
+  test "message renders lazily using current locale" do
     error = nil
 
-    I18n.backend.store_translations(:pl,{errors: {messages: {invalid: "jest nieprawidłowe"}}})
+    I18n.backend.store_translations(:pl, errors: { messages: { invalid: "jest nieprawidłowe" } })
 
     I18n.with_locale(:en) { error = ActiveModel::Error.new(Person.new, :name, :invalid) }
     I18n.with_locale(:pl) {
-      assert_equal 'jest nieprawidłowe', error.message
+      assert_equal "jest nieprawidłowe", error.message
     }
   end
 
-  test 'message uses current locale' do
+  test "message uses current locale" do
     model = Person.new
 
-    I18n.backend.store_translations(:en, {errors: {messages: {inadequate: "Inadequate %{attribute} found!"}}})
+    I18n.backend.store_translations(:en, errors: { messages: { inadequate: "Inadequate %{attribute} found!" } })
     error = ActiveModel::Error.new(Person.new, :name, :inadequate)
-    assert_equal 'Inadequate name found!', error.message
+    assert_equal "Inadequate name found!", error.message
   end
 
   # full_message

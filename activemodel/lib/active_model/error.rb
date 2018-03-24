@@ -106,9 +106,9 @@ module ActiveModel
 
     private
 
-    def humanized_attribute
-      default = @attribute.to_s.tr(".", "_").humanize
-      @base.class.human_attribute_name(@attribute, default: default)
-    end
+      def humanized_attribute
+        default = @attribute.to_s.tr(".", "_").humanize
+        @base.class.human_attribute_name(@attribute, default: default)
+      end
   end
 end
