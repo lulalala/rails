@@ -213,7 +213,9 @@ module ActiveModel
           so the old hash behavior is simulated. As this is deprecated,
           this will result in an ArgumentError in Rails 6.1.
         MSG
-        @errors.each { |error| yield error.attribute, error.message }
+        @errors.
+          sort { |a, b| a.attribute <=> b.attribute }.
+          each { |error| yield error.attribute, error.message }
       end
     end
 
