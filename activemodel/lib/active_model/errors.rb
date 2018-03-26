@@ -304,6 +304,10 @@ module ActiveModel
       hash
     end
 
+    def group_by_attribute
+      group_by(&:attribute)
+    end
+
     # Adds +message+ to the error messages and used validator type to +details+ on +attribute+.
     # More than one error can be added to the same +attribute+.
     # If no +message+ is supplied, <tt>:invalid</tt> is assumed.
