@@ -153,6 +153,15 @@ class ErrorsTest < ActiveModel::TestCase
     assert person.errors.added?(:name, :blank)
   end
 
+  test "add creates an error object and returns it" do
+    person = Person.new
+    error = person.errors.add(:name, :blank)
+
+    assert_equal :name, error.attribute
+    assert_equal :blank, error.type
+    assert_equal error, person.errors.first
+  end
+
   test "add, with type as symbol" do
     person = Person.new
     person.errors.add(:name, :blank)

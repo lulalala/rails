@@ -346,12 +346,12 @@ module ActiveModel
     #   person.errors.details
     #   # => {:base=>[{error: :name_or_email_blank}]}
     def add(attribute, type = nil, **options)
-      @errors.append(
-        Error.new(
-          @base,
-          *normalize_arguments(attribute, type, options)
-        )
+      error = Error.new(
+        @base,
+        *normalize_arguments(attribute, type, options)
       )
+      @errors.append(error)
+      error
     end
 
     # Returns +true+ if an error on the attribute with the given message is
