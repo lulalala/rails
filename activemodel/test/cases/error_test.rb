@@ -164,4 +164,13 @@ class ErrorTest < ActiveModel::TestCase
     error = ActiveModel::Error.new(Person.new, :name, :blank)
     assert_equal "name can't be blank", error.full_message
   end
+
+  test "full_message uses default format" do
+    error = ActiveModel::Error.new(Person.new, :name, message: "can't be blank")
+
+    # Use a locale without errors.format
+    I18n.with_locale(:unknown) {
+      assert_equal "name can't be blank", error.full_message
+    }
+  end
 end

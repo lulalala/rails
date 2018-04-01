@@ -84,7 +84,7 @@ module ActiveModel
       return message if @attribute == :base
 
       I18n.t(:"errors.format",
-        default: "%{@attribute} %{message}",
+        default: "%{attribute} %{message}",
         attribute: humanized_attribute,
         message: message)
     end
