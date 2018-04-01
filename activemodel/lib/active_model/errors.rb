@@ -499,6 +499,8 @@ module ActiveModel
       # Message or type can also be dynamic.
       # This method evaluates them and normalize type/message to the appropriate place.
       def normalize_arguments(attribute, type, **options)
+        options = options.except(*CALLBACKS_OPTIONS)
+
         # Evaluate proc first
         if type.respond_to?(:call)
           type = type.call(@base, options)
