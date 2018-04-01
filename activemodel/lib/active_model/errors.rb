@@ -491,8 +491,8 @@ module ActiveModel
 
     private
 
-      def normalize_detail(message, options)
-        { error: message }.merge(options.except(*CALLBACKS_OPTIONS + MESSAGE_OPTIONS))
+      def normalize_detail(type, options)
+        { error: type }.merge(options.except(*MESSAGE_OPTIONS))
       end
 
       # Error type can appear as <tt>type</tt> or <tt>options[:message]</tt>.
