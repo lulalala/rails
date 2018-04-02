@@ -509,26 +509,12 @@ module ActiveModel
           options[:message] = options[:message].call(@base, options)
         end
 
-        normalized_type = nil
-
-        # Determine type from `type` or `options`
-        if type.is_a?(Symbol)
-          normalized_type = type
-        else
-          if options[:message].is_a?(Symbol)
-            normalized_type = options.delete(:message)
-          end
-
-          if type.is_a? String
-            options[:message] = type
-          end
+        if type && !type.is_a?(Symbol)
+          options[:message] ||= type
+          type = nil
         end
 
-        if normalized_type
-          normalized_type = normalized_type.to_sym
-        end
-
-        [attribute.to_sym, normalized_type, options]
+        [attribute.to_sym, type, options]
       end
 
       def add_from_legacy_details_hash(details)

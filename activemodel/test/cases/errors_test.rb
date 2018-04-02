@@ -237,7 +237,7 @@ class ErrorsTest < ActiveModel::TestCase
     person = Person.new
     person.errors.add(:name, message: type)
 
-    assert_equal :empty, person.errors.first.type
+    assert_equal :invalid, person.errors.first.type
     assert_equal ["can't be empty"], person.errors[:name]
   end
 
