@@ -68,7 +68,7 @@ class I18nValidationTest < ActiveModel::TestCase
       Person.validates_confirmation_of :title, validation_options
       @person.title_confirmation = "foo"
       @person.valid?
-      error = @person.errors.first
+      error = @person.errors.objects.first
 
       assert_equal :title_confirmation, error.attribute
       assert_equal :confirmation, error.type
@@ -80,7 +80,7 @@ class I18nValidationTest < ActiveModel::TestCase
     test "validates_acceptance_of on generated message #{name}" do
       Person.validates_acceptance_of :title, validation_options.merge(allow_nil: false)
       @person.valid?
-      error = @person.errors.first
+      error = @person.errors.objects.first
 
       assert_equal :title, error.attribute
       assert_equal :accepted, error.type
@@ -92,7 +92,7 @@ class I18nValidationTest < ActiveModel::TestCase
     test "validates_presence_of on generated message #{name}" do
       Person.validates_presence_of :title, validation_options
       @person.valid?
-      error = @person.errors.first
+      error = @person.errors.objects.first
 
       assert_equal :title, error.attribute
       assert_equal :blank, error.type
@@ -104,7 +104,7 @@ class I18nValidationTest < ActiveModel::TestCase
     test "validates_length_of for :within on generated message when too short #{name}" do
       Person.validates_length_of :title, validation_options.merge(within: 3..5)
       @person.valid?
-      error = @person.errors.first
+      error = @person.errors.objects.first
 
       assert_equal :title, error.attribute
       assert_equal :too_short, error.type
@@ -117,7 +117,7 @@ class I18nValidationTest < ActiveModel::TestCase
       Person.validates_length_of :title, validation_options.merge(within: 3..5)
       @person.title = "this title is too long"
       @person.valid?
-      error = @person.errors.first
+      error = @person.errors.objects.first
 
       assert_equal :title, error.attribute
       assert_equal :too_long, error.type
@@ -129,7 +129,7 @@ class I18nValidationTest < ActiveModel::TestCase
     test "validates_length_of for :is on generated message #{name}" do
       Person.validates_length_of :title, validation_options.merge(is: 5)
       @person.valid?
-      error = @person.errors.first
+      error = @person.errors.objects.first
 
       assert_equal :title, error.attribute
       assert_equal :wrong_length, error.type
@@ -142,7 +142,7 @@ class I18nValidationTest < ActiveModel::TestCase
       Person.validates_format_of :title, validation_options.merge(with: /\A[1-9][0-9]*\z/)
       @person.title = "72x"
       @person.valid?
-      error = @person.errors.first
+      error = @person.errors.objects.first
 
       assert_equal :title, error.attribute
       assert_equal :invalid, error.type
@@ -155,7 +155,7 @@ class I18nValidationTest < ActiveModel::TestCase
       Person.validates_inclusion_of :title, validation_options.merge(in: %w(a b c))
       @person.title = "z"
       @person.valid?
-      error = @person.errors.first
+      error = @person.errors.objects.first
 
       assert_equal :title, error.attribute
       assert_equal :inclusion, error.type
@@ -168,7 +168,7 @@ class I18nValidationTest < ActiveModel::TestCase
       Person.validates_inclusion_of :title, validation_options.merge(within: %w(a b c))
       @person.title = "z"
       @person.valid?
-      error = @person.errors.first
+      error = @person.errors.objects.first
 
       assert_equal :title, error.attribute
       assert_equal :inclusion, error.type
@@ -181,7 +181,7 @@ class I18nValidationTest < ActiveModel::TestCase
       Person.validates_exclusion_of :title, validation_options.merge(in: %w(a b c))
       @person.title = "a"
       @person.valid?
-      error = @person.errors.first
+      error = @person.errors.objects.first
 
       assert_equal :title, error.attribute
       assert_equal :exclusion, error.type
@@ -194,7 +194,7 @@ class I18nValidationTest < ActiveModel::TestCase
       Person.validates_exclusion_of :title, validation_options.merge(within: %w(a b c))
       @person.title = "a"
       @person.valid?
-      error = @person.errors.first
+      error = @person.errors.objects.first
 
       assert_equal :title, error.attribute
       assert_equal :exclusion, error.type
@@ -207,7 +207,7 @@ class I18nValidationTest < ActiveModel::TestCase
       Person.validates_numericality_of :title, validation_options
       @person.title = "a"
       @person.valid?
-      error = @person.errors.first
+      error = @person.errors.objects.first
 
       assert_equal :title, error.attribute
       assert_equal :not_a_number, error.type
@@ -220,7 +220,7 @@ class I18nValidationTest < ActiveModel::TestCase
       Person.validates_numericality_of :title, validation_options.merge(only_integer: true)
       @person.title = "0.0"
       @person.valid?
-      error = @person.errors.first
+      error = @person.errors.objects.first
 
       assert_equal :title, error.attribute
       assert_equal :not_an_integer, error.type
@@ -233,7 +233,7 @@ class I18nValidationTest < ActiveModel::TestCase
       Person.validates_numericality_of :title, validation_options.merge(only_integer: true, odd: true)
       @person.title = 0
       @person.valid?
-      error = @person.errors.first
+      error = @person.errors.objects.first
 
       assert_equal :title, error.attribute
       assert_equal :odd, error.type
@@ -246,7 +246,7 @@ class I18nValidationTest < ActiveModel::TestCase
       Person.validates_numericality_of :title, validation_options.merge(only_integer: true, less_than: 0)
       @person.title = 1
       @person.valid?
-      error = @person.errors.first
+      error = @person.errors.objects.first
 
       assert_equal :title, error.attribute
       assert_equal :less_than, error.type
