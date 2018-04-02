@@ -341,7 +341,14 @@ module ActiveModel
         @base,
         *normalize_arguments(attribute, type, options)
       )
+
+      if exception = options[:strict]
+        exception = ActiveModel::StrictValidationFailed if exception == true
+        raise exception, error.full_message
+      end
+
       @errors.append(error)
+
       error
     end
 
