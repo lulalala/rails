@@ -48,6 +48,9 @@ module ActiveModel
       type = @type
       if msg = @options[:message]
         if msg.is_a?(Symbol)
+          # TODO: Having options[:message] to act as an alternative i18n lookup key seems to be wrong.
+          # We should have a separate new key for this, for example `:lookup_key`,
+          # this way lookup_key can also be a Proc and generated dynamically.
           type = msg
           msg = nil
         end

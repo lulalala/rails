@@ -231,16 +231,6 @@ class ErrorsTest < ActiveModel::TestCase
     assert_equal [msg], person.errors[:name]
   end
 
-  test "add, with options[:message] as Proc, which evaluates to Symbol, where type is nil" do
-    type = Proc.new { :empty }
-
-    person = Person.new
-    person.errors.add(:name, message: type)
-
-    assert_equal :invalid, person.errors.first.type
-    assert_equal ["can't be empty"], person.errors[:name]
-  end
-
   test "added? detects indifferent if a specific error was added to the object" do
     person = Person.new
     person.errors.add(:name, "cannot be blank")

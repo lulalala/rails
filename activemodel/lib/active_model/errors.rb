@@ -512,9 +512,6 @@ module ActiveModel
         if type.respond_to?(:call)
           type = type.call(@base, options)
         end
-        if options[:message].respond_to?(:call)
-          options[:message] = options[:message].call(@base, options)
-        end
 
         if type && !type.is_a?(Symbol)
           options[:message] ||= type
