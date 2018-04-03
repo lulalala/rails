@@ -121,7 +121,7 @@ module ActiveModel
     private
 
       def humanized_attribute
-        return @_humanized_attribute if @_humanized_attribute
+        return @_humanized_attribute if defined? @_humanized_attribute
 
         default = @attribute.to_s.tr(".", "_").humanize
         @_humanized_attribute = @base.class.human_attribute_name(@attribute, default: default)
