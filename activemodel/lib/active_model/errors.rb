@@ -281,7 +281,6 @@ module ActiveModel
     end
     alias :messages :to_hash
 
-    # TODO: Can we deprecate this?
     def details
       hash = {}
       group_by_attribute.each do |attribute, errors|
