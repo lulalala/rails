@@ -663,7 +663,7 @@ This helper passes the record to a separate class for validation.
 class GoodnessValidator < ActiveModel::Validator
   def validate(record)
     if record.first_name == "Evil"
-      record.errors[:base] << "This person is evil"
+      record.errors.add :base, "This person is evil"
     end
   end
 end
@@ -691,7 +691,7 @@ validator class as `options`:
 class GoodnessValidator < ActiveModel::Validator
   def validate(record)
     if options[:fields].any?{|field| record.send(field) == "Evil" }
-      record.errors[:base] << "This person is evil"
+      record.errors.add :base, "This person is evil"
     end
   end
 end
@@ -722,7 +722,7 @@ class GoodnessValidator
 
   def validate
     if some_complex_condition_involving_ivars_and_private_methods?
-      @person.errors[:base] << "This person is evil"
+      @person.errors.add :base, "This person is evil"
     end
   end
 
@@ -978,7 +978,7 @@ and performs the validation on it. The custom validator is called using the
 class MyValidator < ActiveModel::Validator
   def validate(record)
     unless record.name.starts_with? 'X'
-      record.errors[:name] << 'Need a name starting with X please!'
+      record.errors.add :name, "Need a name starting with X please!"
     end
   end
 end
@@ -1000,7 +1000,7 @@ instance.
 class EmailValidator < ActiveModel::EachValidator
   def validate_each(record, attribute, value)
     unless value =~ /\A([^@\s]+)@((?:[-a-z0-9]+\.)+[a-z]{2,})\z/i
-      record.errors[attribute] << (options[:message] || "is not an email")
+      record.errors.add attribute, (options[:message] || "is not an email")
     end
   end
 end
@@ -1133,24 +1133,6 @@ person.errors.full_messages
  # => ["Name cannot contain the characters !@#%*()_-+="]
 ```
 
-An equivalent to `errors#add` is to use `<<` to append a message to the `errors.messages` array for an attribute:
-
-```ruby
-  class Person < ApplicationRecord
-    def a_method_used_for_validation_purposes
-      errors.messages[:name] << "cannot contain the characters !@#%*()_-+="
-    end
-  end
-
-  person = Person.create(name: "!@#")
-
-  person.errors[:name]
-   # => ["cannot contain the characters !@#%*()_-+="]
-
-  person.errors.to_a
-   # => ["Name cannot contain the characters !@#%*()_-+="]
-```
-
 ### `errors.details`
 
 You can specify a validator type to the returned error details hash using the
@@ -1195,7 +1177,7 @@ You can add error messages that are related to the object's state as a whole, in
 ```ruby
 class Person < ApplicationRecord
   def a_method_used_for_validation_purposes
-    errors[:base] << "This person is invalid because ..."
+    errors.add :base, "This person is invalid because ..."
   end
 end
 ```
