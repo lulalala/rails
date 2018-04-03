@@ -118,6 +118,21 @@ module ActiveModel
       true
     end
 
+    def ==(other)
+      attributes_for_hash == other.attributes_for_hash
+    end
+    alias eql? ==
+
+    def hash
+      attributes_for_hash.hash
+    end
+
+    protected
+
+      def attributes_for_hash
+        [@base, @attribute, @type, @options]
+      end
+
     private
 
       def humanized_attribute
