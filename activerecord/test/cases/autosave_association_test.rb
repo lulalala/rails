@@ -16,6 +16,7 @@ require "models/invoice"
 require "models/line_item"
 require "models/mouse"
 require "models/order"
+require "models/order_entry"
 require "models/parrot"
 require "models/pirate"
 require "models/project"
@@ -1942,9 +1943,9 @@ class TestAutosaveAssociationValidationErrorMessage < ActiveRecord::TestCase
   end
 
   def setup
-    @order = Order.create!(order_entries_attributes: [
-      { title: "entry_1" },
-      { title: "entry_2" }])
+    @order = ::Order.create!(order_entries_attributes: [
+      { title: "order_entry_1" },
+      { title: "order_entry_1" }])
     @entry_1 = @order.order_entries.first
     @entry_2 = @order.order_entries.last
   end
@@ -1962,6 +1963,7 @@ class TestAutosaveAssociationValidationErrorMessage < ActiveRecord::TestCase
       { id: @entry_1.id, title: "order_entry_1" },
       { id: @entry_2.id, title: "" }])
     assert_equal 1, @order.errors.count
+    @order.valid?(:foo)
     assert_equal "order_entries[1].title", @order.errors.messages.keys.first.to_s
   end
 end
