@@ -4,13 +4,14 @@ require "isolation/abstract_unit"
 require "env_helpers"
 require "rails/command"
 require "rails/commands/credentials/credentials_command"
+require "fileutils"
+require "tempfile"
 
 class Rails::Command::CredentialsCommandTest < ActiveSupport::TestCase
   include ActiveSupport::Testing::Isolation, EnvHelpers
 
-  setup { build_app }
-
-  teardown { teardown_app }
+  setup :build_app
+  teardown :teardown_app
 
   test "edit without editor gives hint" do
     run_edit_command(editor: "").tap do |output|
@@ -88,6 +89,7 @@ class Rails::Command::CredentialsCommandTest < ActiveSupport::TestCase
     assert_match(/secret_key_base/, output)
   end
 
+
   test "show credentials" do
     assert_match(/access_key_id: 123/, run_show_command)
   end
@@ -120,6 +122,96 @@ class Rails::Command::CredentialsCommandTest < ActiveSupport::TestCase
     assert_no_match(/secret_key_base/, output)
   end
 
+
+  test "diff enroll diffing" do
+    assert_match(/\benrolled project/i, run_diff_command(enroll: true))
+
+    assert_includes File.read(app_path(".gitattributes")), <<~EOM
+      config/credentials/*.yml.enc diff=rails_credentials
+      config/credentials.yml.enc diff=rails_credentials
+    EOM
+  end
+
+  test "diff enroll diffing when already enrolled" do
+    run_diff_command(enroll: true)
+
+    assert_match(/already enrolled/i, run_diff_command(enroll: true))
+
+    assert_equal 1, File.read(app_path(".gitattributes")).scan("config/credentials.yml.enc").length
+  end
+
+  test "diff disenroll diffing" do
+    FileUtils.rm(app_path(".gitattributes"))
+    run_diff_command(enroll: true)
+
+    assert_match(/\bdisenrolled project/i, run_diff_command(disenroll: true))
+
+    assert_not File.exist?(app_path(".gitattributes"))
+  end
+
+  test "diff disenroll diffing with existing .gitattributes" do
+    File.write(app_path(".gitattributes"), "foo bar\n")
+    run_diff_command(enroll: true)
+
+    run_diff_command(disenroll: true)
+
+    assert_equal("foo bar\n", File.read(app_path(".gitattributes")))
+  end
+
+  test "diff disenroll diffing when not enrolled" do
+    FileUtils.rm(app_path(".gitattributes"))
+
+    assert_match(/not enrolled/i, run_diff_command(disenroll: true))
+
+    assert_not File.exist?(app_path(".gitattributes"))
+  end
+
+  test "running edit after enrolling in diffing sets diff driver" do
+    run_diff_command(enroll: true)
+    run_edit_command
+
+    Dir.chdir(app_path) do
+      assert_equal "bin/rails credentials:diff", `git config --get 'diff.rails_credentials.textconv'`.strip
+    end
+  end
+
+  test "diff from git diff left file" do
+    run_edit_command(environment: "development")
+
+    assert_match(/access_key_id: 123/, run_diff_command("config/credentials/development.yml.enc"))
+  end
+
+  test "diff from git diff right file" do
+    run_edit_command(environment: "development")
+
+    content_path = app_path("config", "credentials", "KnAM4a_development.yml.enc")
+    File.write(content_path,
+      File.read(app_path("config", "credentials", "development.yml.enc")))
+
+    assert_match(/access_key_id: 123/, run_diff_command(content_path))
+  end
+
+  test "diff for main credentials" do
+    assert_match(/access_key_id: 123/, run_diff_command("config/credentials.yml.enc"))
+  end
+
+  test "diff when master key is not available" do
+    remove_file "config/master.key"
+
+    raw_content = File.read(app_path("config", "credentials.yml.enc"))
+    assert_match(raw_content, run_diff_command("config/credentials.yml.enc"))
+  end
+
+  test "diff returns raw encrypted content when errors occur" do
+    run_edit_command(environment: "development")
+
+    content_path = app_path("20190807development.yml.enc")
+    encrypted_content = File.read(app_path("config", "credentials", "development.yml.enc"))
+    File.write(content_path, encrypted_content + "ruin decryption")
+
+    assert_match(encrypted_content, run_diff_command(content_path))
+  end
+
   private
     def run_edit_command(editor: "cat", environment: nil, **options)
       switch_env("EDITOR", editor) do
@@ -131,5 +223,10 @@ class Rails::Command::CredentialsCommandTest < ActiveSupport::TestCase
     def run_show_command(environment: nil, **options)
       args = environment ? ["--environment", environment] : []
       rails "credentials:show", args, **options
+    end
+
+    def run_diff_command(path = nil, enroll: nil, disenroll: nil, **options)
+      args = [path, ("--enroll" if enroll), ("--disenroll" if disenroll)].compact
+      rails "credentials:diff", args, **options
     end
 end

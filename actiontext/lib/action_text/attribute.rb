@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "active_support/core_ext/symbol/starts_ends_with"
+
 module ActionText
   module Attribute
     extend ActiveSupport::Concern
@@ -13,6 +15,7 @@ module ActionText
       #   end
       #
       #   message = Message.create!(content: "<h1>Funny times!</h1>")
+      #   message.content? #=> true
       #   message.content.to_s # => "<h1>Funny times!</h1>"
       #   message.content.to_plain_text # => "Funny times!"
       #
@@ -29,6 +32,10 @@ module ActionText
             rich_text_#{name} || build_rich_text_#{name}
           end
 
+          def #{name}?
+            rich_text_#{name}.present?
+          end
+
           def #{name}=(body)
             self.#{name}.body = body
           end
@@ -40,6 +47,16 @@ module ActionText
         scope :"with_rich_text_#{name}", -> { includes("rich_text_#{name}") }
         scope :"with_rich_text_#{name}_and_embeds", -> { includes("rich_text_#{name}": { embeds_attachments: :blob }) }
       end
+
+      # Eager load all dependent RichText models in bulk.
+      def with_all_rich_text
+        eager_load(rich_text_association_names)
+      end
+
+      private
+        def rich_text_association_names
+          reflect_on_all_associations(:has_one).collect(&:name).select { |n| n.start_with?("rich_text_") }
+        end
     end
   end
 end

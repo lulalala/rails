@@ -64,7 +64,7 @@ module ActiveSupport
       self
     end
 
-    def initialize(constructor = {})
+    def initialize(constructor = nil)
       if constructor.respond_to?(:to_hash)
         super()
         update(constructor)
@@ -72,6 +72,8 @@ module ActiveSupport
         hash = constructor.is_a?(Hash) ? constructor : constructor.to_hash
         self.default = hash.default if hash.default
         self.default_proc = hash.default_proc if hash.default_proc
+      elsif constructor.nil?
+        super()
       else
         super(constructor)
       end
@@ -91,12 +93,12 @@ module ActiveSupport
     #
     # This value can be later fetched using either +:key+ or <tt>'key'</tt>.
     def []=(key, value)
-      regular_writer(convert_key(key), convert_value(value, for: :assignment))
+      regular_writer(convert_key(key), convert_value(value, conversion: :assignment))
     end
 
     alias_method :store, :[]=
 
-    # Updates the receiver in-place, merging in the hash passed as argument:
+    # Updates the receiver in-place, merging in the hashes passed as arguments:
     #
     #   hash_1 = ActiveSupport::HashWithIndifferentAccess.new
     #   hash_1[:key] = 'value'
@@ -106,7 +108,10 @@ module ActiveSupport
     #
     #   hash_1.update(hash_2) # => {"key"=>"New Value!"}
     #
-    # The argument can be either an
+    #   hash = ActiveSupport::HashWithIndifferentAccess.new
+    #   hash.update({ "a" => 1 }, { "b" => 2 }) # => { "a" => 1, "b" => 2 }
+    #
+    # The arguments can be either an
     # <tt>ActiveSupport::HashWithIndifferentAccess</tt> or a regular +Hash+.
     # In either case the merge respects the semantics of indifferent access.
     #
@@ -121,18 +126,15 @@ module ActiveSupport
     #   hash_1[:key] = 10
     #   hash_2['key'] = 12
     #   hash_1.update(hash_2) { |key, old, new| old + new } # => {"key"=>22}
-    def update(other_hash)
-      if other_hash.is_a? HashWithIndifferentAccess
-        super(other_hash)
+    def update(*other_hashes, &block)
+      if other_hashes.size == 1
+        update_with_single_argument(other_hashes.first, block)
       else
-        other_hash.to_hash.each_pair do |key, value|
-          if block_given? && key?(key)
-            value = yield(convert_key(key), self[key], value)
-          end
-          regular_writer(convert_key(key), convert_value(value))
+        other_hashes.each do |other_hash|
+          update_with_single_argument(other_hash, block)
         end
-        self
       end
+      self
     end
 
     alias_method :merge!, :update
@@ -259,8 +261,8 @@ module ActiveSupport
     # This method has the same semantics of +update+, except it does not
     # modify the receiver but rather returns a new hash with indifferent
     # access with the result of the merge.
-    def merge(hash, &block)
-      dup.update(hash, &block)
+    def merge(*hashes, &block)
+      dup.update(*hashes, &block)
     end
 
     # Like +merge+ but the other way around: Merges the receiver into the
@@ -357,38 +359,57 @@ module ActiveSupport
       set_defaults(_new_hash)
 
       each do |key, value|
-        _new_hash[key] = convert_value(value, for: :to_hash)
+        _new_hash[key] = convert_value(value, conversion: :to_hash)
       end
       _new_hash
     end
 
     private
-      def convert_key(key) # :doc:
-        key.kind_of?(Symbol) ? key.to_s : key
+      if Symbol.method_defined?(:name)
+        def convert_key(key)
+          key.kind_of?(Symbol) ? key.name : key
+        end
+      else
+        def convert_key(key)
+          key.kind_of?(Symbol) ? key.to_s : key
+        end
       end
 
-      def convert_value(value, options = {}) # :doc:
+      def convert_value(value, conversion: nil)
         if value.is_a? Hash
-          if options[:for] == :to_hash
+          if conversion == :to_hash
             value.to_hash
           else
             value.nested_under_indifferent_access
           end
         elsif value.is_a?(Array)
-          if options[:for] != :assignment || value.frozen?
+          if conversion != :assignment || value.frozen?
             value = value.dup
           end
-          value.map! { |e| convert_value(e, options) }
+          value.map! { |e| convert_value(e, conversion: conversion) }
         else
           value
         end
       end
 
-      def set_defaults(target) # :doc:
+      def set_defaults(target)
         if default_proc
           target.default_proc = default_proc.dup
         else
           target.default = default
+        end
+      end
+
+      def update_with_single_argument(other_hash, block)
+        if other_hash.is_a? HashWithIndifferentAccess
+          regular_update(other_hash, &block)
+        else
+          other_hash.to_hash.each_pair do |key, value|
+            if block && key?(key)
+              value = block.call(convert_key(key), self[key], value)
+            end
+            regular_writer(convert_key(key), convert_value(value))
+          end
         end
       end
   end

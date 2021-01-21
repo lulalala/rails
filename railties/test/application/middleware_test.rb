@@ -38,6 +38,41 @@ module ApplicationTests
         "Rails::Rack::Logger",
         "ActionDispatch::ShowExceptions",
         "ActionDispatch::DebugExceptions",
+        "ActionDispatch::Reloader",
+        "ActionDispatch::Callbacks",
+        "ActiveRecord::Migration::CheckPending",
+        "ActionDispatch::Cookies",
+        "ActionDispatch::Session::CookieStore",
+        "ActionDispatch::Flash",
+        "ActionDispatch::ContentSecurityPolicy::Middleware",
+        "ActionDispatch::PermissionsPolicy::Middleware",
+        "Rack::Head",
+        "Rack::ConditionalGet",
+        "Rack::ETag",
+        "Rack::TempfileReaper"
+      ], middleware
+    end
+
+    test "default middleware stack when requests are local" do
+      add_to_config "config.consider_all_requests_local = true"
+      add_to_config "config.active_record.migration_error = :page_load"
+
+      boot!
+
+      assert_equal [
+        "Webpacker::DevServerProxy",
+        "ActionDispatch::HostAuthorization",
+        "Rack::Sendfile",
+        "ActionDispatch::Static",
+        "ActionDispatch::Executor",
+        "ActiveSupport::Cache::Strategy::LocalCache",
+        "Rack::Runtime",
+        "Rack::MethodOverride",
+        "ActionDispatch::RequestId",
+        "ActionDispatch::RemoteIp",
+        "Rails::Rack::Logger",
+        "ActionDispatch::ShowExceptions",
+        "ActionDispatch::DebugExceptions",
         "ActionDispatch::ActionableExceptions",
         "ActionDispatch::Reloader",
         "ActionDispatch::Callbacks",
@@ -46,6 +81,7 @@ module ApplicationTests
         "ActionDispatch::Session::CookieStore",
         "ActionDispatch::Flash",
         "ActionDispatch::ContentSecurityPolicy::Middleware",
+        "ActionDispatch::PermissionsPolicy::Middleware",
         "Rack::Head",
         "Rack::ConditionalGet",
         "Rack::ETag",
@@ -71,7 +107,6 @@ module ApplicationTests
         "Rails::Rack::Logger",
         "ActionDispatch::ShowExceptions",
         "ActionDispatch::DebugExceptions",
-        "ActionDispatch::ActionableExceptions",
         "ActionDispatch::Reloader",
         "ActionDispatch::Callbacks",
         "Rack::Head",
@@ -144,7 +179,7 @@ module ApplicationTests
       add_to_config "config.ssl_options = { redirect: { host: 'example.com' } }"
       boot!
 
-      assert_equal [{ redirect: { host: "example.com" } }], Rails.application.middleware[2].args
+      assert_equal [{ redirect: { host: "example.com" }, ssl_default_redirect_status: 308 }], Rails.application.middleware[2].args
     end
 
     test "removing Active Record omits its middleware" do
@@ -238,9 +273,10 @@ module ApplicationTests
     end
 
     test "Rails.cache does not respond to middleware" do
-      add_to_config "config.cache_store = :memory_store"
+      add_to_config "config.cache_store = :memory_store, { timeout: 10 }"
       boot!
       assert_equal "Rack::Runtime", middleware[5]
+      assert_instance_of ActiveSupport::Cache::MemoryStore, Rails.cache
     end
 
     test "Rails.cache does respond to middleware" do
@@ -309,7 +345,6 @@ module ApplicationTests
     end
 
     private
-
       def boot!
         require "#{app_path}/config/environment"
       end

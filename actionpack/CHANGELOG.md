@@ -1,10 +1,13 @@
-*   Calling `ActionController::Parameters#transform_keys/!` without a block now returns
-    an enumerator for the parameters instead of the underlying hash.
+## Unreleased
 
-    *Eugene Kenny*
+*   Change the request method to a `GET` when passing failed requests down to `config.exceptions_app`.
 
-* Fix strong parameters blocks all attributes even when only some keys are invalid (non-numerical). It should only block invalid key's values instead.
+    *Alex Robbin*
 
-    *Stan Lo*
+*   Add `redirect_back_or_to(fallback_location, **)` as a more aesthetically pleasing version of `redirect_back fallback_location:, **`.
+    The old method name is retained without explicit deprecation.
 
-Please check [6-0-stable](https://github.com/rails/rails/blob/6-0-stable/actionpack/CHANGELOG.md) for previous changes.
+    *DHH*
+
+
+Please check [6-1-stable](https://github.com/rails/rails/blob/6-1-stable/actionpack/CHANGELOG.md) for previous changes.

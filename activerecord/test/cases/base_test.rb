@@ -27,6 +27,7 @@ require "models/bird"
 require "models/car"
 require "models/bulb"
 require "concurrent/atomic/count_down_latch"
+require "active_support/core_ext/enumerable"
 
 class FirstAbstractClass < ActiveRecord::Base
   self.abstract_class = true
@@ -77,6 +78,39 @@ class BasicsTest < ActiveRecord::TestCase
     assert_equal "Post::GeneratedRelationMethods", mod.inspect
   end
 
+  def test_arel_attribute_normalization
+    assert_equal Post.arel_table["body"], Post.arel_table[:body]
+    assert_equal Post.arel_table["body"], Post.arel_table[:text]
+  end
+
+  def test_deprecated_arel_attribute
+    assert_deprecated do
+      assert_equal Post.arel_table["body"], Post.arel_attribute(:body)
+    end
+  end
+
+  def test_deprecated_arel_attribute_on_relation
+    assert_deprecated do
+      assert_equal Post.arel_table["body"], Post.all.arel_attribute(:body)
+    end
+  end
+
+  def test_incomplete_schema_loading
+    topic = Topic.first
+    payload = { foo: 42 }
+    topic.update!(content: payload)
+
+    Topic.reset_column_information
+
+    Topic.connection.stub(:lookup_cast_type_from_column, ->(_) { raise "Some Error" }) do
+      assert_raises RuntimeError do
+        Topic.columns_hash
+      end
+    end
+
+    assert_equal payload, Topic.first.content
+  end
+
   def test_column_names_are_escaped
     conn      = ActiveRecord::Base.connection
     classname = conn.class.name[/[^:]*$/]
@@ -85,7 +119,6 @@ class BasicsTest < ActiveRecord::TestCase
       "Mysql2Adapter"     => "`",
       "PostgreSQLAdapter" => '"',
       "OracleAdapter"     => '"',
-      "FbAdapter"         => '"'
     }.fetch(classname) {
       raise "need a bad char for #{classname}"
     }
@@ -205,7 +238,7 @@ class BasicsTest < ActiveRecord::TestCase
     )
 
     # For adapters which support microsecond resolution.
-    if subsecond_precision_supported?
+    if supports_datetime_with_precision?
       assert_equal 11, Topic.find(1).written_on.sec
       assert_equal 223300, Topic.find(1).written_on.usec
       assert_equal 9900, Topic.find(2).written_on.usec
@@ -522,6 +555,10 @@ class BasicsTest < ActiveRecord::TestCase
     assert_equal Topic.find("1-meowmeow"), Topic.find(1)
   end
 
+  def test_out_of_range_slugs
+    assert_equal [Topic.find(1)], Topic.where(id: ["1-meowmeow", "9223372036854775808-hello"])
+  end
+
   def test_find_by_slug_with_array
     assert_equal Topic.find([1, 2]), Topic.find(["1-meowmeow", "2-hello"])
     assert_equal "The Second Topic of the day", Topic.find(["2-hello", "1-meowmeow"]).first.title
@@ -669,12 +706,12 @@ class BasicsTest < ActiveRecord::TestCase
   def test_non_valid_identifier_column_name
     weird = Weird.create("a$b" => "value")
     weird.reload
-    assert_equal "value", weird.send("a$b")
+    assert_equal "value", weird.public_send("a$b")
     assert_equal "value", weird.read_attribute("a$b")
 
     weird.update_columns("a$b" => "value2")
     weird.reload
-    assert_equal "value2", weird.send("a$b")
+    assert_equal "value2", weird.public_send("a$b")
     assert_equal "value2", weird.read_attribute("a$b")
   end
 
@@ -716,9 +753,9 @@ class BasicsTest < ActiveRecord::TestCase
   def test_attributes
     category = Category.new(name: "Ruby")
 
-    expected_attributes = category.attribute_names.map do |attribute_name|
-      [attribute_name, category.public_send(attribute_name)]
-    end.to_h
+    expected_attributes = category.attribute_names.index_with do |attribute_name|
+      category.public_send(attribute_name)
+    end
 
     assert_instance_of Hash, category.attributes
     assert_equal expected_attributes, category.attributes
@@ -727,6 +764,12 @@ class BasicsTest < ActiveRecord::TestCase
   def test_new_record_returns_boolean
     assert_equal false, Topic.new.persisted?
     assert_equal true, Topic.find(1).persisted?
+  end
+
+  def test_previously_new_record_returns_boolean
+    assert_equal false, Topic.new.previously_new_record?
+    assert_equal true, Topic.create.previously_new_record?
+    assert_equal false, Topic.find(1).previously_new_record?
   end
 
   def test_dup
@@ -1080,8 +1123,8 @@ class BasicsTest < ActiveRecord::TestCase
   end
 
   def test_find_keeps_multiple_group_values
-    combined = Developer.all.merge!(group: "developers.name, developers.salary, developers.id, developers.created_at, developers.updated_at, developers.created_on, developers.updated_on").to_a
-    assert_equal combined, Developer.all.merge!(group: ["developers.name", "developers.salary", "developers.id", "developers.created_at", "developers.updated_at", "developers.created_on", "developers.updated_on"]).to_a
+    combined = Developer.merge(group: "developers.name, developers.salary, developers.id, developers.legacy_created_at, developers.legacy_updated_at, developers.legacy_created_on, developers.legacy_updated_on").to_a
+    assert_equal combined, Developer.merge(group: ["developers.name", "developers.salary", "developers.id", "developers.created_at", "developers.updated_at", "developers.created_on", "developers.updated_on"]).to_a
   end
 
   def test_find_symbol_ordered_last
@@ -1141,17 +1184,20 @@ class BasicsTest < ActiveRecord::TestCase
   def test_clear_cache!
     # preheat cache
     c1 = Post.connection.schema_cache.columns("posts")
+    assert_not_equal 0, Post.connection.schema_cache.size
+
     ActiveRecord::Base.clear_cache!
+    assert_equal 0, Post.connection.schema_cache.size
+
     c2 = Post.connection.schema_cache.columns("posts")
-    c1.each_with_index do |v, i|
-      assert_not_same v, c2[i]
-    end
+    assert_not_equal 0, Post.connection.schema_cache.size
+
     assert_equal c1, c2
   end
 
   def test_current_scope_is_reset
     Object.const_set :UnloadablePost, Class.new(ActiveRecord::Base)
-    UnloadablePost.send(:current_scope=, UnloadablePost.all)
+    UnloadablePost.current_scope = UnloadablePost.all
 
     UnloadablePost.unloadable
     klass = UnloadablePost
@@ -1164,6 +1210,16 @@ class BasicsTest < ActiveRecord::TestCase
 
   def test_marshal_round_trip
     expected = posts(:welcome)
+    marshalled = Marshal.dump(expected)
+    actual = Marshal.load(marshalled)
+
+    assert_equal expected.attributes, actual.attributes
+  end
+
+  def test_marshal_inspected_round_trip
+    expected = posts(:welcome)
+    expected.inspect
+
     marshalled = Marshal.dump(expected)
     actual = Marshal.load(marshalled)
 
@@ -1185,6 +1241,21 @@ class BasicsTest < ActiveRecord::TestCase
     post       = Marshal.load(marshalled)
 
     assert_equal 1, post.comments.length
+  end
+
+  if current_adapter?(:Mysql2Adapter)
+    def test_marshal_load_legacy_6_0_record_mysql
+      path = File.expand_path(
+        "support/marshal_compatibility_fixtures/legacy_6_0_record_mysql.dump",
+        TEST_ROOT
+      )
+      topic = Marshal.load(File.read(path))
+
+      assert_not_predicate topic, :new_record?
+      assert_equal 1, topic.id
+      assert_equal "The First Topic", topic.title
+      assert_equal "Have a nice day", topic.content
+    end
   end
 
   if Process.respond_to?(:fork) && !in_memory_db?
@@ -1238,14 +1309,38 @@ class BasicsTest < ActiveRecord::TestCase
     assert Company.has_attribute?("id")
     assert Company.has_attribute?("type")
     assert Company.has_attribute?("name")
+    assert Company.has_attribute?("new_name")
     assert Company.has_attribute?("metadata")
     assert_not Company.has_attribute?("lastname")
     assert_not Company.has_attribute?("age")
+
+    company = Company.new
+    assert company.has_attribute?("id")
+    assert company.has_attribute?("type")
+    assert company.has_attribute?("name")
+    assert company.has_attribute?("new_name")
+    assert company.has_attribute?("metadata")
+    assert_not company.has_attribute?("lastname")
+    assert_not company.has_attribute?("age")
   end
 
   def test_has_attribute_with_symbol
     assert Company.has_attribute?(:id)
+    assert Company.has_attribute?(:type)
+    assert Company.has_attribute?(:name)
+    assert Company.has_attribute?(:new_name)
+    assert Company.has_attribute?(:metadata)
+    assert_not Company.has_attribute?(:lastname)
     assert_not Company.has_attribute?(:age)
+
+    company = Company.new
+    assert company.has_attribute?(:id)
+    assert company.has_attribute?(:type)
+    assert company.has_attribute?(:name)
+    assert company.has_attribute?(:new_name)
+    assert company.has_attribute?(:metadata)
+    assert_not company.has_attribute?(:lastname)
+    assert_not company.has_attribute?(:age)
   end
 
   def test_attribute_names_on_table_not_exists
@@ -1314,6 +1409,21 @@ class BasicsTest < ActiveRecord::TestCase
     }.with_indifferent_access
     topic = Topic.new(attrs)
     assert_equal attrs, topic.slice(attrs.keys)
+  end
+
+  def test_values_at
+    company = Company.new(name: "37signals", rating: 1)
+
+    assert_equal [ "37signals", 1, "I am Jack's profound disappointment" ],
+      company.values_at(:name, :rating, :arbitrary_method)
+    assert_equal [ "I am Jack's profound disappointment", 1, "37signals" ],
+      company.values_at(:arbitrary_method, :rating, :name)
+  end
+
+  def test_values_at_accepts_array_argument
+    topic = Topic.new(title: "Budget", author_name: "Jason")
+
+    assert_equal %w( Budget Jason ), topic.values_at(%w( title author_name ))
   end
 
   def test_default_values_are_deeply_dupped
@@ -1412,6 +1522,14 @@ class BasicsTest < ActiveRecord::TestCase
     assert_not_includes SymbolIgnoredDeveloper.columns_hash.keys, "first_name"
   end
 
+  test ".columns_hash raises an error if the record has an empty table name" do
+    expected_message = "FirstAbstractClass has no table configured. Set one with FirstAbstractClass.table_name="
+    exception = assert_raises(ActiveRecord::TableNotSpecified) do
+      FirstAbstractClass.columns_hash
+    end
+    assert_equal expected_message, exception.message
+  end
+
   test "ignored columns have no attribute methods" do
     assert_not_respond_to Developer.new, :first_name
     assert_not_respond_to Developer.new, :first_name=
@@ -1460,6 +1578,10 @@ class BasicsTest < ActiveRecord::TestCase
     assert_equal "Developer: name", loaded_developer.name
   end
 
+  test "when assigning new ignored columns it invalidates cache for column names" do
+    assert_not_includes ColumnNamesCachedDeveloper.column_names, "name"
+  end
+
   test "ignored columns not included in SELECT" do
     query = Developer.all.to_sql.downcase
 
@@ -1494,63 +1616,121 @@ class BasicsTest < ActiveRecord::TestCase
     ActiveRecord::Base.protected_environments = previous_protected_environments
   end
 
-  test "creating a record raises if preventing writes" do
-    error = assert_raises ActiveRecord::ReadOnlyError do
-      ActiveRecord::Base.connection.while_preventing_writes do
-        Bird.create! name: "Bluejay"
-      end
+  test "cannot call connects_to on non-abstract or non-ActiveRecord::Base classes" do
+    error = assert_raises(NotImplementedError) do
+      Bird.connects_to(database: { writing: :arunit })
     end
 
-    assert_match %r/\AWrite query attempted while in readonly mode: INSERT /, error.message
+    assert_equal "`connects_to` can only be called on ActiveRecord::Base or abstract classes", error.message
   end
 
-  test "updating a record raises if preventing writes" do
-    bird = Bird.create! name: "Bluejay"
+  test "cannot call connected_to on subclasses of ActiveRecord::Base with legacy connection handling" do
+    old_value = ActiveRecord::Base.legacy_connection_handling
+    ActiveRecord::Base.legacy_connection_handling = true
 
-    error = assert_raises ActiveRecord::ReadOnlyError do
-      ActiveRecord::Base.connection.while_preventing_writes do
-        bird.update! name: "Robin"
-      end
+    error = assert_raises(NotImplementedError) do
+      Bird.connected_to(role: :reading) { }
     end
 
-    assert_match %r/\AWrite query attempted while in readonly mode: UPDATE /, error.message
+    assert_equal "`connected_to` can only be called on ActiveRecord::Base with legacy connection handling.", error.message
+  ensure
+    clean_up_legacy_connection_handlers
+    ActiveRecord::Base.legacy_connection_handling = old_value
   end
 
-  test "deleting a record raises if preventing writes" do
-    bird = Bird.create! name: "Bluejay"
-
-    error = assert_raises ActiveRecord::ReadOnlyError do
-      ActiveRecord::Base.connection.while_preventing_writes do
-        bird.destroy!
-      end
+  test "cannot call connected_to with role and shard on non-abstract classes" do
+    error = assert_raises(NotImplementedError) do
+      Bird.connected_to(role: :reading, shard: :default) { }
     end
 
-    assert_match %r/\AWrite query attempted while in readonly mode: DELETE /, error.message
+    assert_equal "calling `connected_to` is only allowed on ActiveRecord::Base or abstract classes.", error.message
   end
 
-  test "selecting a record does not raise if preventing writes" do
-    bird = Bird.create! name: "Bluejay"
-
-    ActiveRecord::Base.connection.while_preventing_writes do
-      assert_equal bird, Bird.where(name: "Bluejay").first
+  test "can call connected_to with role and shard on abstract classes" do
+    AbstractCompany.connected_to(role: :reading, shard: :default) do
+      assert AbstractCompany.connected_to?(role: :reading, shard: :default)
     end
   end
 
-  test "an explain query does not raise if preventing writes" do
-    Bird.create!(name: "Bluejay")
+  test "#connecting_to with role" do
+    AbstractCompany.connecting_to(role: :reading)
 
-    ActiveRecord::Base.connection.while_preventing_writes do
-      assert_queries(2) { Bird.where(name: "Bluejay").explain }
+    assert AbstractCompany.connected_to?(role: :reading)
+    assert AbstractCompany.current_preventing_writes
+  ensure
+    ActiveRecord::Base.connected_to_stack.pop
+  end
+
+  test "#connecting_to with role and shard" do
+    AbstractCompany.connecting_to(role: :reading, shard: :default)
+
+    assert AbstractCompany.connected_to?(role: :reading, shard: :default)
+  ensure
+    ActiveRecord::Base.connected_to_stack.pop
+  end
+
+  test "#connecting_to with prevent_writes" do
+    AbstractCompany.connecting_to(role: :writing, prevent_writes: true)
+
+    assert AbstractCompany.connected_to?(role: :writing)
+    assert AbstractCompany.current_preventing_writes
+  ensure
+    ActiveRecord::Base.connected_to_stack.pop
+  end
+
+  test "#connecting_to doesn't work with legacy connection handling" do
+    old_value = ActiveRecord::Base.legacy_connection_handling
+    ActiveRecord::Base.legacy_connection_handling = true
+
+    assert_raises NotImplementedError do
+      AbstractCompany.connecting_to(role: :writing, prevent_writes: true)
+    end
+  ensure
+    ActiveRecord::Base.legacy_connection_handling = old_value
+  end
+
+  test "#connected_to_many doesn't work with legacy connection handling" do
+    old_value = ActiveRecord::Base.legacy_connection_handling
+    ActiveRecord::Base.legacy_connection_handling = true
+
+    assert_raises NotImplementedError do
+      ActiveRecord::Base.connected_to_many([AbstractCompany], role: :writing)
+    end
+  ensure
+    ActiveRecord::Base.legacy_connection_handling = old_value
+  end
+
+  test "#connected_to_many cannot be called on anything but ActiveRecord::Base" do
+    assert_raises NotImplementedError do
+      AbstractCompany.connected_to_many([AbstractCompany], role: :writing)
     end
   end
 
-  test "an empty transaction does not raise if preventing writes" do
-    ActiveRecord::Base.connection.while_preventing_writes do
-      assert_queries(2, ignore_none: true) do
-        Bird.transaction do
-          ActiveRecord::Base.connection.materialize_transactions
-        end
-      end
+  test "#connected_to_many cannot be called with classes that include ActiveRecord::Base" do
+    assert_raises NotImplementedError do
+      ActiveRecord::Base.connected_to_many([ActiveRecord::Base], role: :writing)
+    end
+  end
+
+  test "#connected_to_many sets prevent_writes if role is reading" do
+    ActiveRecord::Base.connected_to_many([AbstractCompany], role: :reading) do
+      assert AbstractCompany.current_preventing_writes
+      assert_not ActiveRecord::Base.current_preventing_writes
+    end
+  end
+
+  test "#connected_to_many with a single argument for classes" do
+    ActiveRecord::Base.connected_to_many(AbstractCompany, role: :reading) do
+      assert AbstractCompany.current_preventing_writes
+      assert_not ActiveRecord::Base.current_preventing_writes
+    end
+  end
+
+  test "#connected_to_many with a multiple classes without brackets works" do
+    ActiveRecord::Base.connected_to_many(AbstractCompany, FirstAbstractClass, role: :reading) do
+      assert AbstractCompany.current_preventing_writes
+      assert FirstAbstractClass.current_preventing_writes
+      assert_not ActiveRecord::Base.current_preventing_writes
     end
   end
 end

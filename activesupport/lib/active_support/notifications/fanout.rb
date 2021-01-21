@@ -3,6 +3,7 @@
 require "mutex_m"
 require "concurrent/map"
 require "set"
+require "active_support/core_ext/object/try"
 
 module ActiveSupport
   module Notifications
@@ -20,15 +21,18 @@ module ActiveSupport
         super
       end
 
-      def subscribe(pattern = nil, callable = nil, monotonic = false, &block)
-        subscriber = Subscribers.new(monotonic, pattern, callable || block)
+      def subscribe(pattern = nil, callable = nil, monotonic: false, &block)
+        subscriber = Subscribers.new(pattern, callable || block, monotonic)
         synchronize do
-          if String === pattern
+          case pattern
+          when String
             @string_subscribers[pattern] << subscriber
             @listeners_for.delete(pattern)
-          else
+          when NilClass, Regexp
             @other_subscribers << subscriber
             @listeners_for.clear
+          else
+            raise ArgumentError,  "pattern must be specified as a String, Regexp or empty"
           end
         end
         subscriber
@@ -84,27 +88,23 @@ module ActiveSupport
       end
 
       module Subscribers # :nodoc:
-        def self.new(monotonic, pattern, listener)
+        def self.new(pattern, listener, monotonic)
           subscriber_class = monotonic ? MonotonicTimed : Timed
 
           if listener.respond_to?(:start) && listener.respond_to?(:finish)
             subscriber_class = Evented
           else
-            # Doing all this to detect a block like `proc { |x| }` vs
-            # `proc { |*x| }` or `proc { |**x| }`
-            if listener.respond_to?(:parameters)
-              params = listener.parameters
-              if params.length == 1 && params.first.first == :opt
-                subscriber_class = EventObject
-              end
+            # Doing this to detect a single argument block or callable
+            # like `proc { |x| }` vs `proc { |*x| }`, `proc { |**x| }`,
+            # or `proc { |x, **y| }`
+            procish = listener.respond_to?(:parameters) ? listener : listener.method(:call)
+
+            if procish.arity == 1 && procish.parameters.length == 1
+              subscriber_class = EventObject
             end
           end
 
           wrap_all pattern, subscriber_class.new(pattern, listener)
-        end
-
-        def self.event_object_subscriber(pattern, block)
-          wrap_all pattern, EventObject.new(pattern, block)
         end
 
         def self.wrap_all(pattern, subscriber)
@@ -218,6 +218,7 @@ module ActiveSupport
           def finish(name, id, payload)
             stack = Thread.current[:_event_stack]
             event = stack.pop
+            event.payload = payload
             event.finish!
             @delegate.call event
           end

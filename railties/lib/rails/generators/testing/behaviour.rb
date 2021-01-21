@@ -88,7 +88,6 @@ module Rails
         end
 
         private
-
           def destination_root_is_set?
             raise "You need to configure your Rails::Generators::TestCase destination root." unless destination_root
           end
@@ -105,7 +104,7 @@ module Rails
 
           def migration_file_name(relative)
             absolute = File.expand_path(relative, destination_root)
-            dirname, file_name = File.dirname(absolute), File.basename(absolute).sub(/\.rb$/, "")
+            dirname, file_name = File.dirname(absolute), File.basename(absolute).delete_suffix(".rb")
             Dir.glob("#{dirname}/[0-9]*_*.rb").grep(/\d+_#{file_name}.rb$/).first
           end
       end

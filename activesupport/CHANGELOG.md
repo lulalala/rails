@@ -1,23 +1,19 @@
-*   `truncate` would return the original string if it was too short to be truncated
-    and a frozen string if it were long enough to be truncated. Now truncate will
-    consistently return an unfrozen string regardless. This behavior is consistent
-    with `gsub` and `strip`.
+*   Raises an `ArgumentError` when the first argument of `ActiveSupport::Notification.subscribe` is
+    invalid.
 
-    Before:
+    *Vipul A M*
 
-        'foobar'.truncate(5).frozen?
-        # => true
-        'foobar'.truncate(6).frozen?
-        # => false
+*   `HashWithIndifferentAccess#deep_transform_keys` now returns a `HashWithIndifferentAccess` instead of a `Hash`.
 
-    After:
+    *Nathaniel Woodthorpe*
 
-        'foobar'.truncate(5).frozen?
-        # => false
-        'foobar'.truncate(6).frozen?
-        # => false
+*   consume dalli’s `cache_nils` configuration as `ActiveSupport::Cache`'s `skip_nil` when using `MemCacheStore`.
 
-    *Jordan Thomas*
+    *Ritikesh G*
+
+*   add `RedisCacheStore#stats` method similar to `MemCacheStore#stats`. Calls `redis#info` internally.
+
+    *Ritikesh G*
 
 
-Please check [6-0-stable](https://github.com/rails/rails/blob/6-0-stable/activesupport/CHANGELOG.md) for previous changes.
+Please check [6-1-stable](https://github.com/rails/rails/blob/6-1-stable/activesupport/CHANGELOG.md) for previous changes.

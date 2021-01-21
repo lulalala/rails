@@ -3,7 +3,7 @@
 module ActiveRecord
   module ConnectionAdapters
     module PostgreSQL
-      class SchemaCreation < AbstractAdapter::SchemaCreation # :nodoc:
+      class SchemaCreation < SchemaCreation # :nodoc:
         private
           def visit_AlterTable(o)
             super << o.constraint_validations.map { |fk| visit_ValidateConstraint fk }.join(" ")
@@ -13,13 +13,17 @@ module ActiveRecord
             super.dup.tap { |sql| sql << " NOT VALID" unless o.validate? }
           end
 
+          def visit_CheckConstraintDefinition(o)
+            super.dup.tap { |sql| sql << " NOT VALID" unless o.validate? }
+          end
+
           def visit_ValidateConstraint(name)
             "VALIDATE CONSTRAINT #{quote_column_name(name)}"
           end
 
           def visit_ChangeColumnDefinition(o)
             column = o.column
-            column.sql_type = type_to_sql(column.type, column.options)
+            column.sql_type = type_to_sql(column.type, **column.options)
             quoted_column_name = quote_column_name(o.name)
 
             change_column_sql = +"ALTER COLUMN #{quoted_column_name} TYPE #{column.sql_type}"
@@ -33,7 +37,7 @@ module ActiveRecord
             if options[:using]
               change_column_sql << " USING #{options[:using]}"
             elsif options[:cast_as]
-              cast_as_type = type_to_sql(options[:cast_as], options)
+              cast_as_type = type_to_sql(options[:cast_as], **options)
               change_column_sql << " USING CAST(#{quoted_column_name} AS #{cast_as_type})"
             end
 

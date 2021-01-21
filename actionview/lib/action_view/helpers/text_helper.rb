@@ -1,7 +1,11 @@
 # frozen_string_literal: true
 
 require "active_support/core_ext/string/filters"
+require "active_support/core_ext/string/access"
 require "active_support/core_ext/array/extract_options"
+require "action_view/helpers/sanitize_helper"
+require "action_view/helpers/tag_helper"
+require "action_view/helpers/output_safety_helper"
 
 module ActionView
   # = Action View Text Helpers
@@ -228,7 +232,7 @@ module ActionView
       #   pluralize(2, 'Person', locale: :de)
       #   # => 2 Personen
       def pluralize(count, singular, plural_arg = nil, plural: plural_arg, locale: I18n.locale)
-        word = if count == 1 || count.to_s =~ /^1(\.0+)?$/
+        word = if count == 1 || count.to_s.match?(/^1(\.0+)?$/)
           singular
         else
           plural || singular.pluralize(locale)
@@ -426,7 +430,6 @@ module ActionView
         end
 
         private
-
           def next_index
             step_index(1)
           end
@@ -468,18 +471,25 @@ module ActionView
           radius   = options.fetch(:radius, 100)
           omission = options.fetch(:omission, "...")
 
-          part = part.split(separator)
-          part.delete("")
-          affix = part.size > radius ? omission : ""
-
-          part = if part_position == :first
-            drop_index = [part.length - radius, 0].max
-            part.drop(drop_index)
-          else
-            part.first(radius)
+          if separator != ""
+            part = part.split(separator)
+            part.delete("")
           end
 
-          return affix, part.join(separator)
+          affix = part.length > radius ? omission : ""
+
+          part =
+            if part_position == :first
+              part.last(radius)
+            else
+              part.first(radius)
+            end
+
+          if separator != ""
+            part = part.join(separator)
+          end
+
+          return affix, part
         end
     end
   end

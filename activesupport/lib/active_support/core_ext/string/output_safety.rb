@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "erb"
-require "active_support/core_ext/kernel/singleton_class"
 require "active_support/core_ext/module/redefine_method"
 require "active_support/multibyte/unicode"
 
@@ -85,7 +84,7 @@ class ERB
     # use inside HTML attributes.
     #
     # If your JSON is being used downstream for insertion into the DOM, be aware of
-    # whether or not it is being inserted via +html()+. Most jQuery plugins do this.
+    # whether or not it is being inserted via <tt>html()</tt>. Most jQuery plugins do this.
     # If that is the case, be sure to +html_escape+ or +sanitize+ any user-generated
     # content returned by your JSON.
     #
@@ -135,7 +134,7 @@ module ActiveSupport #:nodoc:
   class SafeBuffer < String
     UNSAFE_STRING_METHODS = %w(
       capitalize chomp chop delete delete_prefix delete_suffix
-      downcase lstrip next reverse rstrip slice squeeze strip
+      downcase lstrip next reverse rstrip scrub slice squeeze strip
       succ swapcase tr tr_s unicode_normalize upcase
     )
 
@@ -153,12 +152,12 @@ module ActiveSupport #:nodoc:
 
     def [](*args)
       if html_safe?
-        new_safe_buffer = super
+        new_string = super
 
-        if new_safe_buffer
-          new_safe_buffer.instance_variable_set :@html_safe, true
-        end
+        return unless new_string
 
+        new_safe_buffer = new_string.is_a?(SafeBuffer) ? new_string : SafeBuffer.new(new_string)
+        new_safe_buffer.instance_variable_set :@html_safe, true
         new_safe_buffer
       else
         to_str[*args]
@@ -202,7 +201,7 @@ module ActiveSupport #:nodoc:
     end
 
     def []=(*args)
-      if args.count == 3
+      if args.length == 3
         super(args[0], args[1], html_escape_interpolated_argument(args[2]))
       else
         super(args[0], html_escape_interpolated_argument(args[1]))
@@ -214,7 +213,8 @@ module ActiveSupport #:nodoc:
     end
 
     def *(*)
-      new_safe_buffer = super
+      new_string = super
+      new_safe_buffer = new_string.is_a?(SafeBuffer) ? new_string : SafeBuffer.new(new_string)
       new_safe_buffer.instance_variable_set(:@html_safe, @html_safe)
       new_safe_buffer
     end
@@ -222,7 +222,7 @@ module ActiveSupport #:nodoc:
     def %(args)
       case args
       when Hash
-        escaped_args = Hash[args.map { |k, arg| [k, html_escape_interpolated_argument(arg)] }]
+        escaped_args = args.transform_values { |arg| html_escape_interpolated_argument(arg) }
       else
         escaped_args = Array(args).map { |arg| html_escape_interpolated_argument(arg) }
       end
@@ -291,13 +291,14 @@ module ActiveSupport #:nodoc:
     end
 
     private
-
       def html_escape_interpolated_argument(arg)
         (!html_safe? || arg.html_safe?) ? arg : CGI.escapeHTML(arg.to_s)
       end
 
       def set_block_back_references(block, match_data)
         block.binding.eval("proc { |m| $~ = m }").call(match_data)
+      rescue ArgumentError
+        # Can't create binding from C level Proc
       end
   end
 end

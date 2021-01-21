@@ -31,7 +31,13 @@ class FilterAttributesTest < ActiveRecord::TestCase
     end
   end
 
-  test "string filter_attributes perform pertial match" do
+  test "filter_attributes affects attribute_for_inspect" do
+    Admin::User.all.each do |user|
+      assert_equal "[FILTERED]", user.attribute_for_inspect(:name)
+    end
+  end
+
+  test "string filter_attributes perform partial match" do
     ActiveRecord::Base.filter_attributes = ["n"]
     Admin::Account.all.each do |account|
       assert_includes account.inspect, "name: [FILTERED]"
@@ -104,7 +110,11 @@ class FilterAttributesTest < ActiveRecord::TestCase
     actual = "".dup
     PP.pp(user, StringIO.new(actual))
 
-    assert_includes actual, "name: [FILTERED]"
+    if RUBY_VERSION >= "2.7"
+      assert_includes actual, 'name: "[FILTERED]"'
+    else
+      assert_includes actual, "name: [FILTERED]"
+    end
     assert_equal 1, actual.scan("[FILTERED]").length
   end
 
@@ -124,7 +134,11 @@ class FilterAttributesTest < ActiveRecord::TestCase
     actual = "".dup
     PP.pp(user, StringIO.new(actual))
 
-    assert_includes actual, "auth_token: [FILTERED]"
+    if RUBY_VERSION >= "2.7"
+      assert_includes actual, 'auth_token: "[FILTERED]"'
+    else
+      assert_includes actual, "auth_token: [FILTERED]"
+    end
     assert_includes actual, 'token: "[FILTERED]"'
   ensure
     User.remove_instance_variable(:@filter_attributes)

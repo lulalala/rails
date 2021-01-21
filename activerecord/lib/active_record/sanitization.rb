@@ -61,12 +61,13 @@ module ActiveRecord
       #   # => "id ASC"
       def sanitize_sql_for_order(condition)
         if condition.is_a?(Array) && condition.first.to_s.include?("?")
-          disallow_raw_sql!([condition.first],
-            permit: AttributeMethods::ClassMethods::COLUMN_NAME_WITH_ORDER
+          disallow_raw_sql!(
+            [condition.first],
+            permit: connection.column_name_with_order_matcher
           )
 
           # Ensure we aren't dealing with a subclass of String that might
-          # override methods we use (eg. Arel::Nodes::SqlLiteral).
+          # override methods we use (e.g. Arel::Nodes::SqlLiteral).
           if condition.first.kind_of?(String) && !condition.first.instance_of?(String)
             condition = [String.new(condition.first), *condition[1..-1]]
           end
@@ -133,6 +134,21 @@ module ActiveRecord
         end
       end
 
+      def disallow_raw_sql!(args, permit: connection.column_name_matcher) # :nodoc:
+        unexpected = nil
+        args.each do |arg|
+          next if arg.is_a?(Symbol) || Arel.arel_node?(arg) || permit.match?(arg.to_s)
+          (unexpected ||= []) << arg
+        end
+
+        if unexpected
+          raise(ActiveRecord::UnknownAttributeReference,
+            "Query method called with non-attribute argument(s): " +
+            unexpected.map(&:inspect).join(", ")
+          )
+        end
+      end
+
       private
         def replace_bind_variables(statement, values)
           raise_if_bind_arity_mismatch(statement, statement.count("?"), values.size)
@@ -165,13 +181,14 @@ module ActiveRecord
 
         def quote_bound_value(value, c = connection)
           if value.respond_to?(:map) && !value.acts_like?(:string)
-            quoted = value.map { |v| c.quote(v) }
-            if quoted.empty?
+            values = value.map { |v| v.respond_to?(:id_for_database) ? v.id_for_database : v }
+            if values.empty?
               c.quote(nil)
             else
-              quoted.join(",")
+              values.map! { |v| c.quote(v) }.join(",")
             end
           else
+            value = value.id_for_database if value.respond_to?(:id_for_database)
             c.quote(value)
           end
         end

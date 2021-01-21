@@ -93,7 +93,7 @@ module ActiveRecord
     # cache_version, but this method can be overwritten to return something else.
     #
     # Note, this method will return nil if ActiveRecord::Base.cache_versioning is set to
-    # +false+ (which it is by default until Rails 6.0).
+    # +false+.
     def cache_version
       return unless cache_versioning
 
@@ -104,10 +104,8 @@ module ActiveRecord
         elsif timestamp = updated_at
           timestamp.utc.to_s(cache_timestamp_format)
         end
-      else
-        if self.class.has_attribute?("updated_at")
-          raise ActiveModel::MissingAttributeError, "missing attribute: updated_at"
-        end
+      elsif self.class.has_attribute?("updated_at")
+        raise ActiveModel::MissingAttributeError, "missing attribute: updated_at"
       end
     end
 

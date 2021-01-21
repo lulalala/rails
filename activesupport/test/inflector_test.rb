@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
-require "abstract_unit"
+require_relative "abstract_unit"
 require "active_support/inflector"
 
-require "inflector_test_cases"
-require "constantize_test_cases"
+require_relative "inflector_test_cases"
+require_relative "constantize_test_cases"
 
 class InflectorTest < ActiveSupport::TestCase
   include InflectorTestCases
@@ -31,6 +31,12 @@ class InflectorTest < ActiveSupport::TestCase
 
   def test_pluralize_empty_string
     assert_equal "", ActiveSupport::Inflector.pluralize("")
+  end
+
+  def test_pluralize_with_fallback
+    I18n.stub(:default_locale, :"en-GB") do
+      assert_equal "days", ActiveSupport::Inflector.pluralize("day")
+    end
   end
 
   test "uncountability of ascii word" do
@@ -560,7 +566,7 @@ class InflectorTest < ActiveSupport::TestCase
       # clear the inflections
       ActiveSupport::Inflector.inflections do |inflect|
         inflect.clear(scope)
-        assert_equal [], inflect.send(scope)
+        assert_equal [], inflect.public_send(scope)
       end
     end
   end

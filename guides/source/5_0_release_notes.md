@@ -96,17 +96,20 @@ Some things that you can achieve with this:
 - Attributes do not need to be backed by a database column.
 
 ```ruby
-
 # db/schema.rb
 create_table :store_listings, force: true do |t|
   t.decimal :price_in_cents
   t.string :my_string, default: "original default"
 end
+```
 
+```ruby
 # app/models/store_listing.rb
 class StoreListing < ActiveRecord::Base
 end
+```
 
+```ruby
 store_listing = StoreListing.new(price_in_cents: '10.1')
 
 # before
@@ -346,8 +349,8 @@ Please refer to the [Changelog][action-pack] for detailed changes.
     names instead.
     ([commit](https://github.com/rails/rails/commit/83b767ce))
 
-*   Deprecated accessing mime types via constants (eg. `Mime::HTML`). Use the
-    subscript operator with a symbol instead (eg. `Mime[:html]`).
+*   Deprecated accessing mime types via constants (e.g. `Mime::HTML`). Use the
+    subscript operator with a symbol instead (e.g. `Mime[:html]`).
     ([Pull Request](https://github.com/rails/rails/pull/21869))
 
 *   Deprecated `redirect_to :back` in favor of `redirect_back`, which accepts a

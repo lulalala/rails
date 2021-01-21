@@ -7,6 +7,7 @@ require "models/person"
 
 require "bigdecimal"
 require "active_support/core_ext/big_decimal"
+require "active_support/core_ext/object/inclusion"
 
 class NumericalityValidationTest < ActiveModel::TestCase
   def teardown
@@ -21,7 +22,7 @@ class NumericalityValidationTest < ActiveModel::TestCase
   FLOATS = [0.0, 10.0, 10.5, -10.5, -0.0001] + FLOAT_STRINGS
   INTEGERS = [0, 10, -10] + INTEGER_STRINGS
   BIGDECIMAL = BIGDECIMAL_STRINGS.collect! { |bd| BigDecimal(bd) }
-  JUNK = ["not a number", "42 not a number", "0xdeadbeef", "0xinvalidhex", "0Xdeadbeef", "00-1", "--3", "+-3", "+3-1", "-+019.0", "12.12.13.12", "123\nnot a number"]
+  JUNK = ["not a number", "42 not a number", "0xdeadbeef", "-0xdeadbeef", "+0xdeadbeef", "0xinvalidhex", "0Xdeadbeef", "00-1", "--3", "+-3", "+3-1", "-+019.0", "12.12.13.12", "123\nnot a number"]
   INFINITY = [1.0 / 0.0]
 
   def test_default_validates_numericality_of
@@ -206,6 +207,13 @@ class NumericalityValidationTest < ActiveModel::TestCase
     valid!([-1, 42])
   end
 
+  def test_validates_numericality_with_in
+    Topic.validates_numericality_of :approved, in: 1..3
+
+    invalid!([0, 4])
+    valid!([1, 2, 3])
+  end
+
   def test_validates_numericality_with_other_than_using_string_value
     Topic.validates_numericality_of :approved, other_than: 0
 
@@ -310,7 +318,6 @@ class NumericalityValidationTest < ActiveModel::TestCase
   end
 
   private
-
     def invalid!(values, error = nil)
       with_each_topic_approved_value(values) do |topic, value|
         assert topic.invalid?, "#{value.inspect} not rejected as a number"

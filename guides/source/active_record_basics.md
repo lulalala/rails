@@ -94,7 +94,6 @@ by underscores. Examples:
 | `Mouse`          | `mice`         |
 | `Person`         | `people`       |
 
-
 ### Schema Conventions
 
 Active Record uses naming conventions for the columns in database tables,
@@ -133,8 +132,7 @@ NOTE: While these column names are optional, they are in fact reserved by Active
 Creating Active Record Models
 -----------------------------
 
-It is very easy to create Active Record models. All you have to do is to
-subclass the `ApplicationRecord` class and you're good to go:
+To create Active Record models, subclass the `ApplicationRecord` class and you're good to go:
 
 ```ruby
 class Product < ApplicationRecord
@@ -148,13 +146,13 @@ that the `products` table was created using an SQL (or one of its extensions) st
 
 ```sql
 CREATE TABLE products (
-   id int(11) NOT NULL auto_increment,
-   name varchar(255),
-   PRIMARY KEY  (id)
+  id int(11) NOT NULL auto_increment,
+  name varchar(255),
+  PRIMARY KEY  (id)
 );
 ```
 
-Schema above declares a table with two columns: `id` and `name`. Each row of
+The schema above declares a table with two columns: `id` and `name`. Each row of
 this table represents a certain product with these two parameters. Thus, you
 would be able to write code like the following:
 
@@ -189,7 +187,7 @@ definition:
 class ProductTest < ActiveSupport::TestCase
   set_fixture_class my_products: Product
   fixtures :my_products
-  ...
+  # ...
 end
 ```
 
@@ -340,10 +338,14 @@ A quick example to illustrate:
 class User < ApplicationRecord
   validates :name, presence: true
 end
+```
 
-user = User.new
-user.save  # => false
-user.save! # => ActiveRecord::RecordInvalid: Validation failed: Name can't be blank
+```irb
+irb> user = User.new
+irb> user.save
+=> false
+irb> user.save!
+ActiveRecord::RecordInvalid: Validation failed: Name can't be blank
 ```
 
 You can learn more about validations in the [Active Record Validations
@@ -367,7 +369,7 @@ database that Active Record supports using `rake`. Here's a migration that
 creates a table:
 
 ```ruby
-class CreatePublications < ActiveRecord::Migration[5.0]
+class CreatePublications < ActiveRecord::Migration[6.0]
   def change
     create_table :publications do |t|
       t.string :title
@@ -385,8 +387,8 @@ end
 ```
 
 Rails keeps track of which files have been committed to the database and
-provides rollback features. To actually create the table, you'd run `rails db:migrate`
-and to roll it back, `rails db:rollback`.
+provides rollback features. To actually create the table, you'd run `bin/rails db:migrate`,
+and to roll it back, `bin/rails db:rollback`.
 
 Note that the above code is database-agnostic: it will run in MySQL,
 PostgreSQL, Oracle, and others. You can learn more about migrations in the

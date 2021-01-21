@@ -126,7 +126,6 @@ module ActiveModel
     end
 
     private
-
       def _define_before_model_callback(klass, callback)
         klass.define_singleton_method("before_#{callback}") do |*args, **options, &block|
           options.assert_valid_keys(:if, :unless, :prepend)
@@ -148,7 +147,7 @@ module ActiveModel
           conditional = ActiveSupport::Callbacks::Conditionals::Value.new { |v|
             v != false
           }
-          options[:if] = Array(options[:if]) << conditional
+          options[:if] = Array(options[:if]) + [conditional]
           set_callback(:"#{callback}", :after, *args, options, &block)
         end
       end

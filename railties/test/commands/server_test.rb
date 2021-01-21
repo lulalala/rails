@@ -44,10 +44,6 @@ class Rails::Command::ServerCommandTest < ActiveSupport::TestCase
     assert_no_match(/Maybe you meant/, output)
   end
 
-  def test_using_positional_argument_deprecation
-    assert_match(/DEPRECATION WARNING/, run_command("tin"))
-  end
-
   def test_using_known_server_that_isnt_in_the_gemfile
     assert_match(/Could not load server "unicorn". Maybe you need to the add it to the Gemfile/, run_command("-u", "unicorn"))
   end
@@ -100,19 +96,17 @@ class Rails::Command::ServerCommandTest < ActiveSupport::TestCase
     end
   end
 
-  def test_environment_with_host
-    switch_env "HOST", "1.2.3.4" do
-      assert_deprecated do
-        options = parse_arguments
-        assert_equal "1.2.3.4", options[:Host]
-      end
-    end
-  end
-
   def test_environment_with_binding
     switch_env "BINDING", "1.2.3.4" do
       options = parse_arguments
       assert_equal "1.2.3.4", options[:Host]
+    end
+  end
+
+  def test_environment_with_pidfile
+    switch_env "PIDFILE", "/tmp/rails.pid" do
+      options = parse_arguments
+      assert_equal "/tmp/rails.pid", options[:pid]
     end
   end
 
@@ -234,6 +228,12 @@ class Rails::Command::ServerCommandTest < ActiveSupport::TestCase
       options = parse_arguments(args)
       assert_equal "127.0.0.1", options[:Host]
     end
+
+    switch_env "PIDFILE", "/tmp/rails.pid" do
+      args = ["-P", "/somewhere/else.pid"]
+      options = parse_arguments(args)
+      assert_equal "/somewhere/else.pid", options[:pid]
+    end
   end
 
   def test_records_user_supplied_options
@@ -252,6 +252,16 @@ class Rails::Command::ServerCommandTest < ActiveSupport::TestCase
     switch_env "BINDING", "1.2.3.4" do
       server_options = parse_arguments
       assert_equal [:Host], server_options[:user_supplied_options]
+    end
+
+    switch_env "PORT", "3001" do
+      server_options = parse_arguments
+      assert_equal [:Port], server_options[:user_supplied_options]
+    end
+
+    switch_env "PIDFILE", "/tmp/server.pid" do
+      server_options = parse_arguments
+      assert_equal [:pid], server_options[:user_supplied_options]
     end
   end
 

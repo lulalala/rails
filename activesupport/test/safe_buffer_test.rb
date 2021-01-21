@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "abstract_unit"
+require_relative "abstract_unit"
 require "active_support/core_ext/string/inflections"
 require "yaml"
 
@@ -88,6 +88,7 @@ class SafeBufferTest < ActiveSupport::TestCase
     next: nil,
     reverse: nil,
     rstrip: nil,
+    scrub: nil,
     slice: "foo",
     squeeze: nil,
     strip: nil,
@@ -101,13 +102,13 @@ class SafeBufferTest < ActiveSupport::TestCase
   }.each do |unsafe_method, dummy_args|
     test "Should not return safe buffer from #{unsafe_method}" do
       skip unless String.method_defined?(unsafe_method)
-      altered_buffer = @buffer.send(unsafe_method, *dummy_args)
+      altered_buffer = @buffer.public_send(unsafe_method, *dummy_args)
       assert_not_predicate altered_buffer, :html_safe?
     end
 
     test "Should not return safe buffer from #{unsafe_method}!" do
       skip unless String.method_defined?("#{unsafe_method}!")
-      @buffer.send("#{unsafe_method}!", *dummy_args)
+      @buffer.public_send("#{unsafe_method}!", *dummy_args)
       assert_not_predicate @buffer, :html_safe?
     end
   end
@@ -273,5 +274,10 @@ class SafeBufferTest < ActiveSupport::TestCase
     b.gsub!(/([a-z]+)([0-9]+)/) { $2 + $1 }
     assert_equal "123foo 456bar", b
     assert_not_predicate b, :html_safe?
+  end
+
+  test "Should support Enumerator" do
+    a = "aaa".html_safe.gsub!(/a/).with_index { |m, i| i }
+    assert_equal "012", a
   end
 end

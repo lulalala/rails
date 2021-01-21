@@ -26,6 +26,16 @@ class ErrorTest < ActiveModel::TestCase
     end
   end
 
+  class Manager < Person
+    def read_attribute_for_validation(attr)
+      try(attr)
+    end
+
+    def self.i18n_scope
+      :activemodel
+    end
+  end
+
   def test_initialize
     base = Person.new
     error = ActiveModel::Error.new(base, :name, :too_long, foo: :bar)
@@ -43,7 +53,7 @@ class ErrorTest < ActiveModel::TestCase
 
   test "initialize without type but with options" do
     options = { message: "bar" }
-    error = ActiveModel::Error.new(Person.new, :name, options)
+    error = ActiveModel::Error.new(Person.new, :name, **options)
     assert_equal(options, error.options)
   end
 
@@ -144,6 +154,15 @@ class ErrorTest < ActiveModel::TestCase
     }
   end
 
+  test "message with type as a symbol and indexed attribute can lookup without index in attribute key" do
+    I18n.backend.store_translations(:en, activemodel: { errors: { models: { 'error_test/manager': {
+      attributes: { reports: { name: { presence: "must be present" } } } } } } })
+
+    error = ActiveModel::Error.new(Manager.new, :'reports[123].name', :presence)
+
+    assert_equal "must be present", error.message
+  end
+
   test "message uses current locale" do
     I18n.backend.store_translations(:en, errors: { messages: { inadequate: "Inadequate %{attribute} found!" } })
     error = ActiveModel::Error.new(Person.new, :name, :inadequate)
@@ -196,5 +215,36 @@ class ErrorTest < ActiveModel::TestCase
     error = ActiveModel::Error.new(person, :name, foo: :bar)
 
     assert error != person
+  end
+
+  # details
+
+  test "details which ignores callback and message options" do
+    person = Person.new
+    error = ActiveModel::Error.new(
+      person,
+      :name,
+      :too_short,
+      foo: :bar,
+      if: :foo,
+      unless: :bar,
+      on: :baz,
+      allow_nil: false,
+      allow_blank: false,
+      strict: true,
+      message: "message"
+    )
+
+    assert_equal(
+      error.details,
+      { error: :too_short, foo: :bar }
+    )
+  end
+
+  test "details which has no raw_type" do
+    person = Person.new
+    error = ActiveModel::Error.new(person, :name, foo: :bar)
+
+    assert_equal(error.details, { error: :invalid, foo: :bar })
   end
 end

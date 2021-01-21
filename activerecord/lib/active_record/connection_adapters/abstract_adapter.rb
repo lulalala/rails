@@ -1,12 +1,11 @@
 # frozen_string_literal: true
 
-require "active_record/connection_adapters/determine_if_preparable_visitor"
+require "set"
 require "active_record/connection_adapters/schema_cache"
 require "active_record/connection_adapters/sql_type_metadata"
 require "active_record/connection_adapters/abstract/schema_dumper"
 require "active_record/connection_adapters/abstract/schema_creation"
 require "active_support/concurrency/load_interlock_aware_monitor"
-require "active_support/deprecation"
 require "arel/collectors/bind"
 require "arel/collectors/composite"
 require "arel/collectors/sql_string"
@@ -14,44 +13,6 @@ require "arel/collectors/substitute_binds"
 
 module ActiveRecord
   module ConnectionAdapters # :nodoc:
-    extend ActiveSupport::Autoload
-
-    autoload :Column
-    autoload :ConnectionSpecification
-
-    autoload_at "active_record/connection_adapters/abstract/schema_definitions" do
-      autoload :IndexDefinition
-      autoload :ColumnDefinition
-      autoload :ChangeColumnDefinition
-      autoload :ForeignKeyDefinition
-      autoload :TableDefinition
-      autoload :Table
-      autoload :AlterTable
-      autoload :ReferenceDefinition
-    end
-
-    autoload_at "active_record/connection_adapters/abstract/connection_pool" do
-      autoload :ConnectionHandler
-    end
-
-    autoload_under "abstract" do
-      autoload :SchemaStatements
-      autoload :DatabaseStatements
-      autoload :DatabaseLimits
-      autoload :Quoting
-      autoload :ConnectionPool
-      autoload :QueryCache
-      autoload :Savepoints
-    end
-
-    autoload_at "active_record/connection_adapters/abstract/transaction" do
-      autoload :TransactionManager
-      autoload :NullTransaction
-      autoload :RealTransaction
-      autoload :SavepointTransaction
-      autoload :TransactionState
-    end
-
     # Active Record supports multiple database systems. AbstractAdapter and
     # related classes form the abstraction layer which makes this possible.
     # An AbstractAdapter represents a connection to a database, and provides an
@@ -76,9 +37,10 @@ module ActiveRecord
       include Savepoints
 
       SIMPLE_INT = /\A\d+\z/
+      COMMENT_REGEX = %r{(?:--.*\n)*|/\*(?:[^*]|\*[^/])*\*/}m
 
       attr_accessor :pool
-      attr_reader :schema_cache, :visitor, :owner, :logger, :lock, :prepared_statements, :prevent_writes
+      attr_reader :visitor, :owner, :logger, :lock
       alias :in_use? :owner
 
       set_callback :checkin, :after, :enable_lazy_transactions!
@@ -101,9 +63,21 @@ module ActiveRecord
         end
       end
 
+      DEFAULT_READ_QUERY = [:begin, :commit, :explain, :release, :rollback, :savepoint, :select, :with] # :nodoc:
+      private_constant :DEFAULT_READ_QUERY
+
       def self.build_read_query_regexp(*parts) # :nodoc:
-        parts = parts.map { |part| /\A[\(\s]*#{part}/i }
-        Regexp.union(*parts)
+        parts += DEFAULT_READ_QUERY
+        parts = parts.map { |part| /#{part}/i }
+        /\A(?:[(\s]|#{COMMENT_REGEX})*#{Regexp.union(*parts)}/
+      end
+
+      def self.quoted_column_names # :nodoc:
+        @quoted_column_names ||= {}
+      end
+
+      def self.quoted_table_names # :nodoc:
+        @quoted_table_names ||= {}
       end
 
       def initialize(connection, logger = nil, config = {}) # :nodoc:
@@ -114,21 +88,15 @@ module ActiveRecord
         @instrumenter        = ActiveSupport::Notifications.instrumenter
         @logger              = logger
         @config              = config
-        @pool                = nil
+        @pool                = ActiveRecord::ConnectionAdapters::NullPool.new
         @idle_since          = Concurrent.monotonic_time
-        @schema_cache        = SchemaCache.new self
-        @quoted_column_names, @quoted_table_names = {}, {}
-        @prevent_writes = false
         @visitor = arel_visitor
         @statements = build_statement_pool
         @lock = ActiveSupport::Concurrency::LoadInterlockAwareMonitor.new
 
-        if self.class.type_cast_config_to_boolean(config.fetch(:prepared_statements) { true })
-          @prepared_statements = true
-          @visitor.extend(DetermineIfPreparableVisitor)
-        else
-          @prepared_statements = false
-        end
+        @prepared_statements = self.class.type_cast_config_to_boolean(
+          config.fetch(:prepared_statements, true)
+        )
 
         @advisory_locks_enabled = self.class.type_cast_config_to_boolean(
           config.fetch(:advisory_locks, true)
@@ -139,24 +107,25 @@ module ActiveRecord
         @config[:replica] || false
       end
 
-      # Determines whether writes are currently being prevents.
-      #
-      # Returns true if the connection is a replica, or if +prevent_writes+
-      # is set to true.
-      def preventing_writes?
-        replica? || prevent_writes
+      def use_metadata_table?
+        @config.fetch(:use_metadata_table, true)
       end
 
-      # Prevent writing to the database regardless of role.
+      # Determines whether writes are currently being prevented.
       #
-      # In some cases you may want to prevent writes to the database
-      # even if you are on a database that can write. `while_preventing_writes`
-      # will prevent writes to the database for the duration of the block.
-      def while_preventing_writes
-        original, @prevent_writes = @prevent_writes, true
-        yield
-      ensure
-        @prevent_writes = original
+      # Returns true if the connection is a replica.
+      #
+      # If the application is using legacy handling, returns
+      # true if `connection_handler.prevent_writes` is set.
+      #
+      # If the application is using the new connection handling
+      # will return true based on `current_preventing_writes`.
+      def preventing_writes?
+        return true if replica?
+        return ActiveRecord::Base.connection_handler.prevent_writes if ActiveRecord::Base.legacy_connection_handling
+        return false if connection_klass.nil?
+
+        connection_klass.current_preventing_writes
       end
 
       def migrations_paths # :nodoc:
@@ -164,7 +133,33 @@ module ActiveRecord
       end
 
       def migration_context # :nodoc:
-        MigrationContext.new(migrations_paths)
+        MigrationContext.new(migrations_paths, schema_migration)
+      end
+
+      def schema_migration # :nodoc:
+        @schema_migration ||= begin
+                                conn = self
+                                spec_name = conn.pool.pool_config.connection_specification_name
+
+                                return ActiveRecord::SchemaMigration if spec_name == "ActiveRecord::Base"
+
+                                schema_migration_name = "#{spec_name}::SchemaMigration"
+
+                                Class.new(ActiveRecord::SchemaMigration) do
+                                  define_singleton_method(:name) { schema_migration_name }
+                                  define_singleton_method(:to_s) { schema_migration_name }
+
+                                  self.connection_specification_name = spec_name
+                                end
+                              end
+      end
+
+      def prepared_statements
+        @prepared_statements && !prepared_statements_disabled_cache.include?(object_id)
+      end
+
+      def prepared_statements_disabled_cache # :nodoc:
+        Thread.current[:ar_prepared_statements_disabled_cache] ||= Set.new
       end
 
       class Version
@@ -206,9 +201,17 @@ module ActiveRecord
         @owner = Thread.current
       end
 
+      def connection_klass # :nodoc:
+        @pool.connection_klass
+      end
+
+      def schema_cache
+        @pool.get_schema_cache(self)
+      end
+
       def schema_cache=(cache)
         cache.connection = self
-        @schema_cache = cache
+        @pool.set_schema_cache(cache)
       end
 
       # this method must only be called while holding connection pool's mutex
@@ -247,16 +250,21 @@ module ActiveRecord
       end
 
       def unprepared_statement
-        old_prepared_statements, @prepared_statements = @prepared_statements, false
+        cache = prepared_statements_disabled_cache.add(object_id) if @prepared_statements
         yield
       ensure
-        @prepared_statements = old_prepared_statements
+        cache&.delete(object_id)
       end
 
       # Returns the human-readable name of the adapter. Use mixed case - one
       # can always use downcase if needed.
       def adapter_name
         self.class::ADAPTER_NAME
+      end
+
+      # Does the database for this adapter exist?
+      def self.database_exists?(config)
+        raise NotImplementedError
       end
 
       # Does this adapter support DDL rollbacks in transactions? That is, would
@@ -283,6 +291,10 @@ module ActiveRecord
       # sequence before the insert statement? If true, next_sequence_value
       # is called before each insert to set the record's primary key.
       def prefetch_primary_key?(table_name = nil)
+        false
+      end
+
+      def supports_partitioned_indexes?
         false
       end
 
@@ -332,12 +344,10 @@ module ActiveRecord
         false
       end
 
-      # Does this adapter support creating foreign key constraints
-      # in the same statement as creating the table?
-      def supports_foreign_keys_in_create?
-        supports_foreign_keys?
+      # Does this adapter support creating check constraints?
+      def supports_check_constraints?
+        false
       end
-      deprecate :supports_foreign_keys_in_create?
 
       # Does this adapter support views?
       def supports_views?
@@ -369,12 +379,6 @@ module ActiveRecord
         false
       end
 
-      # Does this adapter support multi-value insert?
-      def supports_multi_insert?
-        true
-      end
-      deprecate :supports_multi_insert?
-
       # Does this adapter support virtual columns?
       def supports_virtual_columns?
         false
@@ -387,6 +391,10 @@ module ActiveRecord
 
       # Does this adapter support optimizer hints?
       def supports_optimizer_hints?
+        false
+      end
+
+      def supports_common_table_expressions?
         false
       end
 
@@ -487,6 +495,9 @@ module ActiveRecord
         #
         # Prevent @connection's finalizer from touching the socket, or
         # otherwise communicating with its server, when it is collected.
+        if schema_cache.connection == self
+          schema_cache.connection = nil
+        end
       end
 
       # Reset the state of this connection, directing the DBMS to clear
@@ -497,6 +508,12 @@ module ActiveRecord
       # overridden by concrete adapters.
       def reset!
         # this should be overridden by concrete adapters
+      end
+
+      # Removes the connection from the pool and disconnect it.
+      def throw_away!
+        pool.remove self
+        disconnect!
       end
 
       # Clear any caching the database adapter may be doing.
@@ -527,7 +544,7 @@ module ActiveRecord
         @connection
       end
 
-      def default_uniqueness_comparison(attribute, value, klass) # :nodoc:
+      def default_uniqueness_comparison(attribute, value) # :nodoc:
         attribute.eq(value)
       end
 
@@ -553,10 +570,6 @@ module ActiveRecord
       # Check the connection back in to the connection pool
       def close
         pool.checkin self
-      end
-
-      def column_name_for_operation(operation, node) # :nodoc:
-        visitor.compile(node)
       end
 
       def default_index_type?(index) # :nodoc:
@@ -587,7 +600,6 @@ module ActiveRecord
       end
 
       private
-
         def type_map
           @type_map ||= Type::TypeMap.new.tap do |mapping|
             initialize_type_map(mapping)
@@ -679,7 +691,6 @@ module ActiveRecord
             binds:             binds,
             type_casted_binds: type_casted_binds,
             statement_name:    statement_name,
-            connection_id:     object_id,
             connection:        self) do
             @lock.synchronize do
               yield
@@ -733,6 +744,14 @@ module ActiveRecord
         end
 
         def build_statement_pool
+        end
+
+        # Builds the result object.
+        #
+        # This is an internal hook to make possible connection adapters to build
+        # custom result objects with connection-specific data.
+        def build_result(columns:, rows:, column_types: {})
+          ActiveRecord::Result.new(columns, rows, column_types)
         end
     end
   end

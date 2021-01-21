@@ -51,8 +51,17 @@
   }
 
   @media (prefers-color-scheme: dark) {
+    body {
+      background-color: #222;
+      color: #ECECEC;
+    }
+
     #route_table tbody tr:nth-child(odd) {
       background: #333;
+    }
+
+    #route_table tbody tr:nth-child(even) {
+      background: #444;
     }
 
     #route_table tbody.exact_matches,
@@ -96,7 +105,7 @@
 </table>
 
 <script type='text/javascript'>
-  // support forEarch iterator on NodeList
+  // support forEach iterator on NodeList
   NodeList.prototype.forEach = Array.prototype.forEach;
 
   // Enables path search functionality

@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "active_support/core_ext/object/try"
-
 module ActionView
   class TemplateRenderer < AbstractRenderer #:nodoc:
     def render(context, options)
@@ -14,7 +12,6 @@ module ActionView
     end
 
     private
-
       # Determine the template to be rendered using the given options.
       def determine_template(options)
         keys = options.has_key?(:locals) ? options[:locals].keys : []
@@ -29,8 +26,7 @@ module ActionView
           if File.exist?(options[:file])
             Template::RawFile.new(options[:file])
           else
-            ActiveSupport::Deprecation.warn "render file: should be given the absolute path to a file"
-            @lookup_context.with_fallbacks.find_template(options[:file], nil, false, keys, @details)
+            raise ArgumentError, "`render file:` should be given the absolute path to a file. '#{options[:file]}' was given instead"
           end
         elsif options.key?(:inline)
           handler = Template.handler_for_extension(options[:type] || "erb")
@@ -40,6 +36,8 @@ module ActionView
             @lookup_context.formats.first
           end
           Template::Inline.new(options[:inline], "inline template", handler, locals: keys, format: format)
+        elsif options.key?(:renderable)
+          Template::Renderable.new(options[:renderable])
         elsif options.key?(:template)
           if options[:template].respond_to?(:render)
             options[:template]
@@ -55,7 +53,11 @@ module ActionView
       # supplied as well.
       def render_template(view, template, layout_name, locals)
         render_with_layout(view, template, layout_name, locals) do |layout|
-          instrument(:template, identifier: template.identifier, layout: layout.try(:virtual_path)) do
+          ActiveSupport::Notifications.instrument(
+            "render_template.action_view",
+            identifier: template.identifier,
+            layout: layout && layout.virtual_path
+          ) do
             template.render(view, locals) { |*name| view._layout_for(*name) }
           end
         end
@@ -63,13 +65,14 @@ module ActionView
 
       def render_with_layout(view, template, path, locals)
         layout  = path && find_layout(path, locals.keys, [formats.first])
-        content = yield(layout)
 
         body = if layout
-          view.view_flow.set(:layout, content)
-          layout.render(view, locals) { |*name| view._layout_for(*name) }
+          ActiveSupport::Notifications.instrument("render_layout.action_view", identifier: layout.identifier) do
+            view.view_flow.set(:layout, yield(layout))
+            layout.render(view, locals) { |*name| view._layout_for(*name) }
+          end
         else
-          content
+          yield
         end
         build_rendered_template(body, template)
       end
@@ -89,14 +92,13 @@ module ActionView
         when String
           begin
             if layout.start_with?("/")
-              ActiveSupport::Deprecation.warn "Rendering layouts from an absolute path is deprecated."
-              @lookup_context.with_fallbacks.find_template(layout, nil, false, [], details)
+              raise ArgumentError, "Rendering layouts from an absolute path is not supported."
             else
               @lookup_context.find_template(layout, nil, false, [], details)
             end
           rescue ActionView::MissingTemplate
             all_details = @details.merge(formats: @lookup_context.default_formats)
-            raise unless template_exists?(layout, nil, false, [], all_details)
+            raise unless template_exists?(layout, nil, false, [], **all_details)
           end
         when Proc
           resolve_layout(layout.call(@lookup_context, formats), keys, formats)

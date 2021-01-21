@@ -35,6 +35,41 @@ module ActionView
       alias :to_s :to_str
     end
 
+    class PathParser # :nodoc:
+      def build_path_regex
+        handlers = Template::Handlers.extensions.map { |x| Regexp.escape(x) }.join("|")
+        formats = Template::Types.symbols.map { |x| Regexp.escape(x) }.join("|")
+        locales = "[a-z]{2}(?:-[A-Z]{2})?"
+        variants = "[^.]*"
+
+        %r{
+          \A
+          (?:(?<prefix>.*)/)?
+          (?<partial>_)?
+          (?<action>.*?)
+          (?:\.(?<locale>#{locales}))??
+          (?:\.(?<format>#{formats}))??
+          (?:\+(?<variant>#{variants}))??
+          (?:\.(?<handler>#{handlers}))?
+          \z
+        }x
+      end
+
+      def parse(path)
+        @regex ||= build_path_regex
+        match = @regex.match(path)
+        {
+          prefix: match[:prefix] || "",
+          action: match[:action],
+          partial: !!match[:partial],
+          locale: match[:locale]&.to_sym,
+          handler: match[:handler]&.to_sym,
+          format: match[:format]&.to_sym,
+          variant: match[:variant]
+        }
+      end
+    end
+
     # Threadsafe template cache
     class Cache #:nodoc:
       class SmallCache < Concurrent::Map
@@ -43,13 +78,13 @@ module ActionView
         end
       end
 
-      # preallocate all the default blocks for performance/memory consumption reasons
+      # Preallocate all the default blocks for performance/memory consumption reasons
       PARTIAL_BLOCK = lambda { |cache, partial| cache[partial] = SmallCache.new }
       PREFIX_BLOCK  = lambda { |cache, prefix|  cache[prefix]  = SmallCache.new(&PARTIAL_BLOCK) }
       NAME_BLOCK    = lambda { |cache, name|    cache[name]    = SmallCache.new(&PREFIX_BLOCK) }
       KEY_BLOCK     = lambda { |cache, key|     cache[key]     = SmallCache.new(&NAME_BLOCK) }
 
-      # usually a majority of template look ups return nothing, use this canonical preallocated array to save memory
+      # Usually a majority of template look ups return nothing, use this canonical preallocated array to save memory
       NO_TEMPLATES = [].freeze
 
       def initialize
@@ -58,7 +93,7 @@ module ActionView
       end
 
       def inspect
-        "#<#{self.class.name}:0x#{(object_id << 1).to_s(16)} keys=#{@data.size} queries=#{@query_cache.size}>"
+        "#{to_s[0..-2]} keys=#{@data.size} queries=#{@query_cache.size}>"
       end
 
       # Cache the templates returned by the block
@@ -75,7 +110,7 @@ module ActionView
         @query_cache.clear
       end
 
-      # Get the cache size.  Do not call this
+      # Get the cache size. Do not call this
       # method. This method is not guaranteed to be here ever.
       def size # :nodoc:
         size = 0
@@ -93,7 +128,6 @@ module ActionView
       end
 
       private
-
         def canonical_no_templates(templates)
           templates.empty? ? NO_TEMPLATES : templates
         end
@@ -122,15 +156,11 @@ module ActionView
       end
     end
 
-    alias :find_all_anywhere :find_all
-    deprecate :find_all_anywhere
-
     def find_all_with_query(query) # :nodoc:
       @cache.cache_query(query) { find_template_paths(File.join(@path, query)) }
     end
 
   private
-
     def _find_all(name, prefix, partial, details, key, locals)
       find_templates(name, prefix, partial, details, locals)
     end
@@ -166,24 +196,20 @@ module ActionView
     EXTENSIONS = { locale: ".", formats: ".", variants: "+", handlers: "." }
     DEFAULT_PATTERN = ":prefix/:action{.:locale,}{.:formats,}{+:variants,}{.:handlers,}"
 
-    def initialize(pattern = nil)
-      if pattern
-        ActiveSupport::Deprecation.warn "Specifying a custom path for #{self.class} is deprecated. Implement a custom Resolver subclass instead."
-        @pattern = pattern
-      else
-        @pattern = DEFAULT_PATTERN
-      end
+    def initialize
+      @pattern = DEFAULT_PATTERN
       @unbound_templates = Concurrent::Map.new
-      super()
+      @path_parser = PathParser.new
+      super
     end
 
     def clear_cache
       @unbound_templates.clear
-      super()
+      @path_parser = PathParser.new
+      super
     end
 
     private
-
       def _find_all(name, prefix, partial, details, key, locals)
         path = Path.build(name, prefix, partial)
         query(path, details, details[:formats], locals, cache: !!key)
@@ -207,9 +233,13 @@ module ActionView
         end
       end
 
+      def source_for_template(template)
+        Template::Sources::File.new(template)
+      end
+
       def build_unbound_template(template, virtual_path)
         handler, format, variant = extract_handler_and_format_and_variant(template)
-        source = Template::Sources::File.new(template)
+        source = source_for_template(template)
 
         UnboundTemplate.new(
           source,
@@ -226,6 +256,10 @@ module ActionView
       end
 
       def find_template_paths_from_details(path, details)
+        if path.name.include?(".")
+          ActiveSupport::Deprecation.warn("Rendering actions with '.' in the name is deprecated: #{path}")
+        end
+
         query = build_query(path, details)
         find_template_paths(query)
       end
@@ -252,7 +286,7 @@ module ActionView
         query.gsub!(/:prefix(\/)?/, prefix)
 
         partial = escape_entry(path.partial? ? "_#{path.name}" : path.name)
-        query.gsub!(/:action/, partial)
+        query.gsub!(":action", partial)
 
         details.each do |ext, candidates|
           if ext == :variants && candidates == :any
@@ -273,22 +307,11 @@ module ActionView
       # from the path, or the handler, we should return the array of formats given
       # to the resolver.
       def extract_handler_and_format_and_variant(path)
-        pieces = File.basename(path).split(".")
-        pieces.shift
+        details = @path_parser.parse(path)
 
-        extension = pieces.pop
-
-        handler = Template.handler_for_extension(extension)
-        format, variant = pieces.last.split(EXTENSIONS[:variants], 2) if pieces.last
-        format = if format
-          Template::Types[format]&.ref
-        else
-          if handler.respond_to?(:default_format) # default_format can return nil
-            handler.default_format
-          else
-            nil
-          end
-        end
+        handler = Template.handler_for_extension(details[:handler])
+        format = details[:format] || handler.try(:default_format)
+        variant = details[:variant]
 
         # Template::Types[format] and handler.default_format can return nil
         [handler, format, variant]
@@ -299,9 +322,9 @@ module ActionView
   class FileSystemResolver < PathResolver
     attr_reader :path
 
-    def initialize(path, pattern = nil)
+    def initialize(path)
       raise ArgumentError, "path already is a Resolver class" if path.is_a?(Resolver)
-      super(pattern)
+      super()
       @path = File.expand_path(path)
     end
 
@@ -323,15 +346,27 @@ module ActionView
     end
 
     private
-
-      def find_template_paths_from_details(path, details)
+      def find_candidate_template_paths(path)
         # Instead of checking for every possible path, as our other globs would
         # do, scan the directory for files with the right prefix.
         query = "#{escape_entry(File.join(@path, path))}*"
 
+        Dir[query].reject do |filename|
+          File.directory?(filename)
+        end
+      end
+
+      def find_template_paths_from_details(path, details)
+        if path.name.include?(".")
+          # Fall back to the unoptimized resolver, which will warn
+          return super
+        end
+
+        candidates = find_candidate_template_paths(path)
+
         regex = build_regex(path, details)
 
-        Dir[query].uniq.reject do |filename|
+        candidates.uniq.reject do |filename|
           # This regex match does double duty of finding only files which match
           # details (instead of just matching the prefix) and also filtering for
           # case-insensitive file systems.
@@ -343,7 +378,7 @@ module ActionView
           # We can use the matches found by the regex and sort by their index in
           # details.
           match = filename.match(regex)
-          EXTENSIONS.keys.reverse.map do |ext|
+          EXTENSIONS.keys.map do |ext|
             if ext == :variants && details[ext] == :any
               match[ext].nil? ? 0 : 1
             elsif match[ext].nil?
@@ -358,13 +393,16 @@ module ActionView
       end
 
       def build_regex(path, details)
-        query = escape_entry(File.join(@path, path))
+        query = Regexp.escape(File.join(@path, path))
         exts = EXTENSIONS.map do |ext, prefix|
           match =
             if ext == :variants && details[ext] == :any
               ".*?"
             else
-              details[ext].compact.uniq.map { |e| Regexp.escape(e) }.join("|")
+              arr = details[ext].compact
+              arr.uniq!
+              arr.map! { |e| Regexp.escape(e) }
+              arr.join("|")
             end
           prefix = Regexp.escape(prefix)
           "(#{prefix}(?<#{ext}>#{match}))?"

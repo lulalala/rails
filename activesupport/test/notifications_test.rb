@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "abstract_unit"
+require_relative "abstract_unit"
 require "active_support/core_ext/module/delegation"
 
 module Notifications
@@ -20,7 +20,6 @@ module Notifications
     end
 
   private
-
     def event(*args)
       ActiveSupport::Notifications::Event.new(*args)
     end
@@ -42,6 +41,27 @@ module Notifications
       assert_operator event.duration, :>, 0
     end
 
+    def test_subscribe_to_events_where_payload_is_changed_during_instrumentation
+      @notifier.subscribe do |event|
+        assert_equal "success!", event.payload[:my_key]
+      end
+
+      ActiveSupport::Notifications.instrument("foo") do |payload|
+        payload[:my_key] = "success!"
+      end
+    end
+
+    def test_subscribe_to_events_can_handle_nested_hashes_in_the_paylaod
+      @notifier.subscribe do |event|
+        assert_equal "success!", event.payload[:some_key][:key_one]
+        assert_equal "great_success!", event.payload[:some_key][:key_two]
+      end
+
+      ActiveSupport::Notifications.instrument("foo", some_key: { key_one: "success!" }) do |payload|
+        payload[:some_key][:key_two] = "great_success!"
+      end
+    end
+
     def test_subscribe_via_top_level_api
       old_notifier = ActiveSupport::Notifications.notifier
       ActiveSupport::Notifications.notifier = ActiveSupport::Notifications::Fanout.new
@@ -59,6 +79,32 @@ module Notifications
       assert_operator event.allocations, :>=, 100
     ensure
       ActiveSupport::Notifications.notifier = old_notifier
+    end
+
+    def test_subscribe_with_a_single_arity_lambda_listener
+      event_name = nil
+      listener = ->(event) do
+        event_name = event.name
+      end
+
+      @notifier.subscribe(&listener)
+      ActiveSupport::Notifications.instrument("event_name")
+
+      assert_equal "event_name", event_name
+    end
+
+    def test_subscribe_with_a_single_arity_callable_listener
+      event_name = nil
+      listener = Class.new do
+        define_method :call do |event|
+          event_name = event.name
+        end
+      end
+
+      @notifier.subscribe(nil, listener.new)
+      ActiveSupport::Notifications.instrument("event_name")
+
+      assert_equal "event_name", event_name
     end
   end
 
@@ -103,6 +149,24 @@ module Notifications
       events   = []
       callback = lambda { |*_| events << _.first }
       ActiveSupport::Notifications.subscribed(callback, name) do
+        ActiveSupport::Notifications.instrument(name)
+        ActiveSupport::Notifications.instrument(name2)
+        ActiveSupport::Notifications.instrument(name)
+      end
+      assert_equal expected, events
+
+      ActiveSupport::Notifications.instrument(name)
+      assert_equal expected, events
+    end
+
+    def test_subscribed_all_messages
+      name     = "foo"
+      name2    = name * 2
+      expected = [name, name2, name]
+
+      events   = []
+      callback = lambda { |*_| events << _.first }
+      ActiveSupport::Notifications.subscribed(callback) do
         ActiveSupport::Notifications.instrument(name)
         ActiveSupport::Notifications.instrument(name2)
         ActiveSupport::Notifications.instrument(name)
@@ -403,6 +467,17 @@ module Notifications
       assert_not child.parent_of?(parent)
       assert_not parent.parent_of?(not_child)
       assert_not not_child.parent_of?(parent)
+    end
+
+    def test_subscribe_raises_error_on_non_supported_arguments
+      notifier = ActiveSupport::Notifications::Fanout.new
+
+      assert_raises ArgumentError do
+        notifier.subscribe(:symbol) { |*_| }
+      end
+      assert_raises ArgumentError do
+        notifier.subscribe(Object.new) { |*_| }
+      end
     end
 
     private

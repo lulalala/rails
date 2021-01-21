@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "abstract_unit"
+require_relative "abstract_unit"
 
 class BacktraceCleanerFilterTest < ActiveSupport::TestCase
   def setup
@@ -112,5 +112,11 @@ class BacktraceCleanerDefaultFilterAndSilencerTest < ActiveSupport::TestCase
     backtrace = ["#{RbConfig::CONFIG["rubylibdir"]}/lib/foo.rb"]
     result = @bc.clean(backtrace)
     assert_empty result
+  end
+
+  test "should preserve lines that have a subpath matching a gem path" do
+    backtrace = [Gem.default_dir, *Gem.path].map { |path| "/parent#{path}/gems/nosuchgem-1.2.3/lib/foo.rb" }
+
+    assert_equal backtrace, @bc.clean(backtrace)
   end
 end

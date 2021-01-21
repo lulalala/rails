@@ -39,8 +39,14 @@ module Rails
         example       = autoloaded.first
         example_klass = example.constantize.class
 
-        ActiveSupport::DescendantsTracker.clear
-        ActiveSupport::Dependencies.clear
+        if config.autoloader == :zeitwerk
+          ActiveSupport::DescendantsTracker.clear
+          ActiveSupport::Dependencies.clear
+
+          unload_message = "#{these} autoloaded #{constants} #{have} been unloaded."
+        else
+          unload_message = "`config.autoloader` is set to `#{config.autoloader}`. #{these} autoloaded #{constants} would have been unloaded if `config.autoloader` had been set to `:zeitwerk`."
+        end
 
         ActiveSupport::Deprecation.warn(<<~WARNING)
           Initialization autoloaded the #{constants} #{enum}.
@@ -52,9 +58,20 @@ module Rails
           initialization does not run again. So, if you reload #{example}, for example,
           the expected changes won't be reflected in that stale #{example_klass} object.
 
-          #{these} autoloaded #{constants} #{have} been unloaded.
+          #{unload_message}
 
-          Please, check the "Autoloading and Reloading Constants" guide for solutions.
+          In order to autoload safely at boot time, please wrap your code in a reloader
+          callback this way:
+
+              Rails.application.reloader.to_prepare do
+                # Autoload classes and modules needed at boot time here.
+              end
+
+          That block runs when the application boots, and every time there is a reload.
+          For historical reasons, it may run twice, so it has to be idempotent.
+
+          Check the "Autoloading and Reloading Constants" guide to learn more about how
+          Rails autoloads and reloads.
         WARNING
       end
 
@@ -62,20 +79,6 @@ module Rails
         if config.autoloader == :zeitwerk
           require "active_support/dependencies/zeitwerk_integration"
           ActiveSupport::Dependencies::ZeitwerkIntegration.take_over(enable_reloading: !config.cache_classes)
-        end
-      end
-
-      initializer :add_builtin_route do |app|
-        if Rails.env.development?
-          app.routes.prepend do
-            get "/rails/info/properties" => "rails/info#properties", internal: true
-            get "/rails/info/routes"     => "rails/info#routes", internal: true
-            get "/rails/info"            => "rails/info#index", internal: true
-          end
-
-          app.routes.append do
-            get "/"                      => "rails/welcome#index", internal: true
-          end
         end
       end
 
@@ -170,6 +173,22 @@ module Rails
         end
       end
 
+      initializer :add_internal_routes do |app|
+        if Rails.env.development?
+          app.routes.prepend do
+            get "/rails/info/properties" => "rails/info#properties", internal: true
+            get "/rails/info/routes"     => "rails/info#routes",     internal: true
+            get "/rails/info"            => "rails/info#index",      internal: true
+          end
+
+          routes_reloader.run_after_load_paths = -> do
+            app.routes.append do
+              get "/" => "rails/welcome#index", internal: true
+            end
+          end
+        end
+      end
+
       # Set routes reload after the finisher hook to ensure routes added in
       # the hook are taken into account.
       initializer :set_routes_reloader_hook do |app|
@@ -210,7 +229,9 @@ module Rails
           app.reloader.check = lambda { true }
         end
 
-        if config.reload_classes_only_on_change
+        if config.cache_classes
+          # No reloader
+        elsif config.reload_classes_only_on_change
           reloader = config.file_watcher.new(*watchable_args, &callback)
           reloaders << reloader
 

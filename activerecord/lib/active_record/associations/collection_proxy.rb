@@ -27,7 +27,7 @@ module ActiveRecord
     # is computed directly through SQL and does not trigger by itself the
     # instantiation of the actual post records.
     class CollectionProxy < Relation
-      def initialize(klass, association) #:nodoc:
+      def initialize(klass, association, **) #:nodoc:
         @association = association
         super klass
 
@@ -46,11 +46,12 @@ module ActiveRecord
       # Returns +true+ if the association has been loaded, otherwise +false+.
       #
       #   person.pets.loaded? # => false
-      #   person.pets
+      #   person.pets.records
       #   person.pets.loaded? # => true
       def loaded?
         @association.loaded?
       end
+      alias :loaded :loaded?
 
       ##
       # :method: select
@@ -100,7 +101,7 @@ module ActiveRecord
       # converting them into an array and iterating through them using
       # Array#select.
       #
-      #   person.pets.select { |pet| pet.name =~ /oo/ }
+      #   person.pets.select { |pet| /oo/.match?(pet.name) }
       #   # => [
       #   #      #<Pet id: 2, name: "Spook", person_id: 1>,
       #   #      #<Pet id: 3, name: "Choo-Choo", person_id: 1>
@@ -373,7 +374,7 @@ module ActiveRecord
       #   person.pets
       #   # => [#<Pet id: 1, name: "Gorby", group: "cats", person_id: 1>]
       #
-      #   other_pets = [Pet.new(name: 'Puff', group: 'celebrities']
+      #   other_pets = [Pet.new(name: 'Puff', group: 'celebrities')]
       #
       #   person.pets.replace(other_pets)
       #
@@ -920,7 +921,7 @@ module ActiveRecord
         !!@association.include?(record)
       end
 
-      def proxy_association
+      def proxy_association # :nodoc:
         @association
       end
 
@@ -1029,7 +1030,7 @@ module ActiveRecord
       alias_method :append, :<<
       alias_method :concat, :<<
 
-      def prepend(*args)
+      def prepend(*args) # :nodoc:
         raise NoMethodError, "prepend on association is not defined. Please use <<, push or append"
       end
 
@@ -1086,9 +1087,14 @@ module ActiveRecord
       end
 
       def reset_scope # :nodoc:
-        @offsets = {}
+        @offsets = @take = nil
         @scope = nil
         self
+      end
+
+      def inspect # :nodoc:
+        load_target if find_from_target?
+        super
       end
 
       delegate_methods = [
@@ -1096,12 +1102,13 @@ module ActiveRecord
         SpawnMethods,
       ].flat_map { |klass|
         klass.public_instance_methods(false)
-      } - self.public_instance_methods(false) - [:select] + [:scoping, :values]
+      } - self.public_instance_methods(false) - [:select] + [
+        :scoping, :values, :insert, :insert_all, :insert!, :insert_all!, :upsert, :upsert_all
+      ]
 
       delegate(*delegate_methods, to: :scope)
 
       private
-
         def find_nth_with_limit(index, limit)
           load_target if find_from_target?
           super

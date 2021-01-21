@@ -6,21 +6,21 @@ require "rack/utils"
 module ActionDispatch
   class ExceptionWrapper
     cattr_accessor :rescue_responses, default: Hash.new(:internal_server_error).merge!(
-      "ActionController::RoutingError"               => :not_found,
-      "AbstractController::ActionNotFound"           => :not_found,
-      "ActionController::MethodNotAllowed"           => :method_not_allowed,
-      "ActionController::UnknownHttpMethod"          => :method_not_allowed,
-      "ActionController::NotImplemented"             => :not_implemented,
-      "ActionController::UnknownFormat"              => :not_acceptable,
-      "Mime::Type::InvalidMimeType"                  => :not_acceptable,
-      "ActionController::MissingExactTemplate"       => :not_acceptable,
-      "ActionController::InvalidAuthenticityToken"   => :unprocessable_entity,
-      "ActionController::InvalidCrossOriginRequest"  => :unprocessable_entity,
-      "ActionDispatch::Http::Parameters::ParseError" => :bad_request,
-      "ActionController::BadRequest"                 => :bad_request,
-      "ActionController::ParameterMissing"           => :bad_request,
-      "Rack::QueryParser::ParameterTypeError"        => :bad_request,
-      "Rack::QueryParser::InvalidParameterError"     => :bad_request
+      "ActionController::RoutingError"                     => :not_found,
+      "AbstractController::ActionNotFound"                 => :not_found,
+      "ActionController::MethodNotAllowed"                 => :method_not_allowed,
+      "ActionController::UnknownHttpMethod"                => :method_not_allowed,
+      "ActionController::NotImplemented"                   => :not_implemented,
+      "ActionController::UnknownFormat"                    => :not_acceptable,
+      "ActionDispatch::Http::MimeNegotiation::InvalidType" => :not_acceptable,
+      "ActionController::MissingExactTemplate"             => :not_acceptable,
+      "ActionController::InvalidAuthenticityToken"         => :unprocessable_entity,
+      "ActionController::InvalidCrossOriginRequest"        => :unprocessable_entity,
+      "ActionDispatch::Http::Parameters::ParseError"       => :bad_request,
+      "ActionController::BadRequest"                       => :bad_request,
+      "ActionController::ParameterMissing"                 => :bad_request,
+      "Rack::QueryParser::ParameterTypeError"              => :bad_request,
+      "Rack::QueryParser::InvalidParameterError"           => :bad_request
     )
 
     cattr_accessor :rescue_templates, default: Hash.new("diagnostics").merge!(
@@ -36,18 +36,24 @@ module ActionDispatch
       "ActionView::Template::Error"
     ]
 
+    cattr_accessor :silent_exceptions, default: [
+      "ActionController::RoutingError",
+      "ActionDispatch::Http::MimeNegotiation::InvalidType"
+    ]
+
     attr_reader :backtrace_cleaner, :exception, :wrapped_causes, :line_number, :file
 
     def initialize(backtrace_cleaner, exception)
       @backtrace_cleaner = backtrace_cleaner
       @exception = exception
+      @exception_class_name = @exception.class.name
       @wrapped_causes = wrapped_causes_for(exception, backtrace_cleaner)
 
       expand_backtrace if exception.is_a?(SyntaxError) || exception.cause.is_a?(SyntaxError)
     end
 
     def unwrapped_exception
-      if wrapper_exceptions.include?(exception.class.to_s)
+      if wrapper_exceptions.include?(@exception_class_name)
         exception.cause
       else
         exception
@@ -55,11 +61,17 @@ module ActionDispatch
     end
 
     def rescue_template
-      @@rescue_templates[@exception.class.name]
+      @@rescue_templates[@exception_class_name]
     end
 
     def status_code
       self.class.status_code_for_exception(unwrapped_exception.class.name)
+    end
+
+    def exception_trace
+      trace = application_trace
+      trace = framework_trace if trace.empty? && !silent_exceptions.include?(@exception_class_name)
+      trace
     end
 
     def application_trace
@@ -130,7 +142,6 @@ module ActionDispatch
     end
 
     private
-
       def backtrace
         Array(@exception.backtrace)
       end

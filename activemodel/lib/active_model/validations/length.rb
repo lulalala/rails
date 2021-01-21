@@ -51,7 +51,7 @@ module ActiveModel
             when Symbol
               check_value = record.send(check_value)
             end
-            next if value_length.send(validity_check, check_value)
+            next if value_length.public_send(validity_check, check_value)
           end
 
           errors_options[:count] = check_value
@@ -59,7 +59,7 @@ module ActiveModel
           default_message = options[MESSAGES[key]]
           errors_options[:message] ||= default_message if default_message
 
-          record.errors.add(attribute, MESSAGES[key], errors_options)
+          record.errors.add(attribute, MESSAGES[key], **errors_options)
         end
       end
 

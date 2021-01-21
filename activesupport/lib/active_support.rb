@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 #--
-# Copyright (c) 2005-2019 David Heinemeier Hansson
+# Copyright (c) 2005-2021 David Heinemeier Hansson
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -35,6 +35,7 @@ module ActiveSupport
 
   autoload :Concern
   autoload :ActionableError
+  autoload :ConfigurationFile
   autoload :CurrentAttributes
   autoload :Dependencies
   autoload :DescendantsTracker
@@ -42,9 +43,11 @@ module ActiveSupport
   autoload :Executor
   autoload :FileUpdateChecker
   autoload :EventedFileUpdateChecker
+  autoload :ForkTracker
   autoload :LogSubscriber
   autoload :Notifications
   autoload :Reloader
+  autoload :SecureCompareRotator
 
   eager_autoload do
     autoload :BacktraceCleaner
@@ -67,6 +70,7 @@ module ActiveSupport
     autoload :OrderedHash
     autoload :OrderedOptions
     autoload :StringInquirer
+    autoload :EnvironmentInquirer
     autoload :TaggedLogging
     autoload :XmlMini
     autoload :ArrayInquirer
@@ -90,6 +94,14 @@ module ActiveSupport
 
   def self.to_time_preserves_timezone=(value)
     DateAndTime::Compatibility.preserve_timezone = value
+  end
+
+  def self.utc_to_local_returns_utc_offset_times
+    DateAndTime::Compatibility.utc_to_local_returns_utc_offset_times
+  end
+
+  def self.utc_to_local_returns_utc_offset_times=(value)
+    DateAndTime::Compatibility.utc_to_local_returns_utc_offset_times = value
   end
 end
 

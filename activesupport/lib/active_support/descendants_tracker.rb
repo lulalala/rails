@@ -13,6 +13,7 @@ module ActiveSupport
         descendants = @@direct_descendants[klass]
         descendants ? descendants.to_a : []
       end
+      alias_method :subclasses, :direct_descendants
 
       def descendants(klass)
         arr = []
@@ -41,7 +42,6 @@ module ActiveSupport
       end
 
       private
-
         def accumulate_descendants(klass, acc)
           if direct_descendants = @@direct_descendants[klass]
             direct_descendants.each do |direct_descendant|
@@ -60,6 +60,7 @@ module ActiveSupport
     def direct_descendants
       DescendantsTracker.direct_descendants(self)
     end
+    alias_method :subclasses, :direct_descendants
 
     def descendants
       DescendantsTracker.descendants(self)
@@ -78,15 +79,17 @@ module ActiveSupport
       end
 
       def <<(klass)
-        cleanup!
         @refs << WeakRef.new(klass)
       end
 
       def each
-        @refs.each do |ref|
+        @refs.reject! do |ref|
           yield ref.__getobj__
+          false
         rescue WeakRef::RefError
+          true
         end
+        self
       end
 
       def refs_size

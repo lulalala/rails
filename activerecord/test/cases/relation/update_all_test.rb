@@ -46,7 +46,15 @@ class UpdateAllTest < ActiveRecord::TestCase
     pets = Pet.joins(:toys).where(toys: { name: "Bone" })
 
     assert_equal true, pets.exists?
-    assert_equal pets.count, pets.update_all(name: "Bob")
+    sqls = capture_sql do
+      assert_equal pets.count, pets.update_all(name: "Bob")
+    end
+
+    if current_adapter?(:Mysql2Adapter)
+      assert_no_match %r/SELECT DISTINCT #{Regexp.escape(Pet.connection.quote_table_name("pets.pet_id"))}/, sqls.last
+    else
+      assert_match %r/SELECT #{Regexp.escape(Pet.connection.quote_table_name("pets.pet_id"))}/, sqls.last
+    end
   end
 
   def test_update_all_with_left_joins
@@ -63,33 +71,18 @@ class UpdateAllTest < ActiveRecord::TestCase
     assert_equal pets.count, pets.update_all(name: "Bob")
   end
 
-  def test_update_all_with_joins_and_limit
-    comments = Comment.joins(:post).where("posts.id" => posts(:welcome).id).limit(1)
-    assert_equal 1, comments.update_all(post_id: posts(:thinking).id)
-    assert_equal posts(:thinking), comments(:greetings).post
-  end
-
   def test_update_all_with_joins_and_limit_and_order
     comments = Comment.joins(:post).where("posts.id" => posts(:welcome).id).order("comments.id").limit(1)
+    assert_equal 1, comments.count
     assert_equal 1, comments.update_all(post_id: posts(:thinking).id)
     assert_equal posts(:thinking), comments(:greetings).post
     assert_equal posts(:welcome),  comments(:more_greetings).post
   end
 
-  def test_update_all_with_joins_and_offset
-    all_comments = Comment.joins(:post).where("posts.id" => posts(:welcome).id)
-    count        = all_comments.count
-    comments     = all_comments.offset(1)
-
-    assert_equal count - 1, comments.update_all(post_id: posts(:thinking).id)
-  end
-
   def test_update_all_with_joins_and_offset_and_order
-    all_comments = Comment.joins(:post).where("posts.id" => posts(:welcome).id).order("posts.id", "comments.id")
-    count        = all_comments.count
-    comments     = all_comments.offset(1)
-
-    assert_equal count - 1, comments.update_all(post_id: posts(:thinking).id)
+    comments = Comment.joins(:post).where("posts.id" => posts(:welcome).id).order("comments.id").offset(1)
+    assert_equal 1, comments.count
+    assert_equal 1, comments.update_all(post_id: posts(:thinking).id)
     assert_equal posts(:thinking), comments(:more_greetings).post
     assert_equal posts(:welcome),  comments(:greetings).post
   end
@@ -209,7 +202,7 @@ class UpdateAllTest < ActiveRecord::TestCase
       people = Person.where(id: people(:michael, :david, :susan))
       expected = people.pluck(:lock_version)
       expected.map! { |version| version + 1 }
-      people.update_counters(touch: [time: now])
+      people.update_counters(touch: { time: now })
 
       assert_equal [now] * 3, people.pluck(:updated_at)
       assert_equal expected, people.pluck(:lock_version)

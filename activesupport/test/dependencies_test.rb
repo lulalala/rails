@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
-require "abstract_unit"
+require_relative "abstract_unit"
 require "pp"
 require "active_support/dependencies"
-require "dependencies_test_helpers"
+require_relative "dependencies_test_helpers"
 
 module ModuleWithMissing
   mattr_accessor :missing_count
@@ -22,11 +22,13 @@ class DependenciesTest < ActiveSupport::TestCase
 
   setup do
     @loaded_features_copy = $LOADED_FEATURES.dup
+    $LOAD_PATH << "test"
   end
 
   teardown do
     ActiveSupport::Dependencies.clear
     $LOADED_FEATURES.replace(@loaded_features_copy)
+    $LOAD_PATH.pop
   end
 
   def test_depend_on_path
@@ -38,6 +40,13 @@ class DependenciesTest < ActiveSupport::TestCase
       ActiveSupport::Dependencies.depend_on "omgwtfbbq"
     end
     assert_equal expected.path, e.path
+  end
+
+  def test_depend_on_message
+    e = assert_raises(LoadError) do
+      ActiveSupport::Dependencies.depend_on "omgwtfbbq"
+    end
+    assert_equal "No such file to load -- omgwtfbbq.rb", e.message
   end
 
   def test_require_dependency_accepts_an_object_which_implements_to_path
@@ -481,17 +490,14 @@ class DependenciesTest < ActiveSupport::TestCase
     end
   end
 
-  # This raises only on 2.5.. (warns on ..2.4)
-  if RUBY_VERSION > "2.5"
-    def test_access_thru_and_upwards_fails
-      with_autoloading_fixtures do
-        assert_not defined?(ModuleFolder)
-        assert_raise(NameError) { ModuleFolder::Object }
-        assert_raise(NameError) { ModuleFolder::NestedClass::Object }
-      end
-    ensure
-      remove_constants(:ModuleFolder)
+  def test_access_thru_and_upwards_fails
+    with_autoloading_fixtures do
+      assert_not defined?(ModuleFolder)
+      assert_raise(NameError) { ModuleFolder::Object }
+      assert_raise(NameError) { ModuleFolder::NestedClass::Object }
     end
+  ensure
+    remove_constants(:ModuleFolder)
   end
 
   def test_non_existing_const_raises_name_error_with_fully_qualified_name
@@ -595,6 +601,13 @@ class DependenciesTest < ActiveSupport::TestCase
       nil_name = Module.new
       def nil_name.name() nil end
       assert_not ActiveSupport::Dependencies.autoloaded?(nil_name)
+
+      invalid_constant_name = Module.new do
+        def self.name
+          "primary::SchemaMigration"
+        end
+      end
+      assert_not ActiveSupport::Dependencies.autoloaded?(invalid_constant_name)
     end
   ensure
     remove_constants(:ModuleFolder)

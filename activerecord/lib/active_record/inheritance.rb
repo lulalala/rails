@@ -38,6 +38,8 @@ module ActiveRecord
     extend ActiveSupport::Concern
 
     included do
+      class_attribute :store_full_class_name, instance_writer: false, default: true
+
       # Determines whether to store the full constant name including namespace when using STI.
       # This is true, by default.
       class_attribute :store_full_sti_class, instance_writer: false, default: true
@@ -52,7 +54,7 @@ module ActiveRecord
           raise NotImplementedError, "#{self} is an abstract class and cannot be instantiated."
         end
 
-        if has_attribute?(inheritance_column)
+        if _has_attribute?(inheritance_column)
           subclass = subclass_from_attributes(attributes)
 
           if subclass.nil? && scope_attributes = current_scope&.scope_for_create
@@ -162,12 +164,42 @@ module ActiveRecord
         defined?(@abstract_class) && @abstract_class == true
       end
 
+      # Returns the value to be stored in the inheritance column for STI.
       def sti_name
-        store_full_sti_class ? name : name.demodulize
+        store_full_sti_class && store_full_class_name ? name : name.demodulize
       end
 
+      # Returns the class for the provided +type_name+.
+      #
+      # It is used to find the class correspondent to the value stored in the inheritance column.
+      def sti_class_for(type_name)
+        if store_full_sti_class && store_full_class_name
+          ActiveSupport::Dependencies.constantize(type_name)
+        else
+          compute_type(type_name)
+        end
+      rescue NameError
+        raise SubclassNotFound,
+          "The single-table inheritance mechanism failed to locate the subclass: '#{type_name}'. " \
+          "This error is raised because the column '#{inheritance_column}' is reserved for storing the class in case of inheritance. " \
+          "Please rename this column if you didn't intend it to be used for storing the inheritance class " \
+          "or overwrite #{name}.inheritance_column to use another column for that information."
+      end
+
+      # Returns the value to be stored in the polymorphic type column for Polymorphic Associations.
       def polymorphic_name
-        base_class.name
+        store_full_class_name ? base_class.name : base_class.name.demodulize
+      end
+
+      # Returns the class for the provided +name+.
+      #
+      # It is used to find the class correspondent to the value stored in the polymorphic type column.
+      def polymorphic_class_for(name)
+        if store_full_class_name
+          ActiveSupport::Dependencies.constantize(name)
+        else
+          compute_type(name)
+        end
       end
 
       def inherited(subclass)
@@ -176,7 +208,6 @@ module ActiveRecord
       end
 
       protected
-
         # Returns the class type of the record using the current module as a prefix. So descendants of
         # MyApp::Business::Account would appear as MyApp::Business::AccountSubclass.
         def compute_type(type_name)
@@ -208,7 +239,6 @@ module ActiveRecord
         end
 
       private
-
         # Called by +instantiate+ to decide which class to use for a new
         # record instance. For single-table inheritance, we check the record
         # for a +type+ column and return the corresponding class.
@@ -221,32 +251,22 @@ module ActiveRecord
         end
 
         def using_single_table_inheritance?(record)
-          record[inheritance_column].present? && has_attribute?(inheritance_column)
+          record[inheritance_column].present? && _has_attribute?(inheritance_column)
         end
 
         def find_sti_class(type_name)
           type_name = base_class.type_for_attribute(inheritance_column).cast(type_name)
-          subclass = begin
-            if store_full_sti_class
-              ActiveSupport::Dependencies.constantize(type_name)
-            else
-              compute_type(type_name)
-            end
-          rescue NameError
-            raise SubclassNotFound,
-              "The single-table inheritance mechanism failed to locate the subclass: '#{type_name}'. " \
-              "This error is raised because the column '#{inheritance_column}' is reserved for storing the class in case of inheritance. " \
-              "Please rename this column if you didn't intend it to be used for storing the inheritance class " \
-              "or overwrite #{name}.inheritance_column to use another column for that information."
-          end
+          subclass = sti_class_for(type_name)
+
           unless subclass == self || descendants.include?(subclass)
             raise SubclassNotFound, "Invalid single-table inheritance type: #{subclass.name} is not a subclass of #{name}"
           end
+
           subclass
         end
 
         def type_condition(table = arel_table)
-          sti_column = arel_attribute(inheritance_column, table)
+          sti_column = table[inheritance_column]
           sti_names  = ([self] + descendants).map(&:sti_name)
 
           predicate_builder.build(sti_column, sti_names)
@@ -272,7 +292,6 @@ module ActiveRecord
     end
 
     private
-
       def initialize_internals_callback
         super
         ensure_proper_type

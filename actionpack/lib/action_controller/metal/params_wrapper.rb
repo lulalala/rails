@@ -107,15 +107,19 @@ module ActionController
 
           unless super || exclude
             if m.respond_to?(:attribute_names) && m.attribute_names.any?
+              self.include = m.attribute_names
+
               if m.respond_to?(:stored_attributes) && !m.stored_attributes.empty?
-                self.include = m.attribute_names + m.stored_attributes.values.flatten.map(&:to_s)
-              else
-                self.include = m.attribute_names
+                self.include += m.stored_attributes.values.flatten.map(&:to_s)
+              end
+
+              if m.respond_to?(:attribute_aliases) && m.attribute_aliases.any?
+                self.include += m.attribute_aliases.keys
               end
 
               if m.respond_to?(:nested_attributes_options) && m.nested_attributes_options.keys.any?
                 self.include += m.nested_attributes_options.keys.map do |key|
-                  key.to_s.concat("_attributes")
+                  (+key.to_s).concat("_attributes")
                 end
               end
 
@@ -151,7 +155,7 @@ module ActionController
         # try to find Foo::Bar::User, Foo::User and finally User.
         def _default_wrap_model
           return nil if klass.anonymous?
-          model_name = klass.name.sub(/Controller$/, "").classify
+          model_name = klass.name.delete_suffix("Controller").classify
 
           begin
             if model_klass = model_name.safe_constantize
@@ -189,7 +193,7 @@ module ActionController
       #
       #   wrap_parameters Person
       #     # wraps parameters by determining the wrapper key from Person class
-      #     (+person+, in this case) and the list of attribute names
+      #     # (+person+, in this case) and the list of attribute names
       #
       #   wrap_parameters include: [:username, :title]
       #     # wraps only +:username+ and +:title+ attributes from parameters.
@@ -240,13 +244,12 @@ module ActionController
 
     # Performs parameters wrapping upon the request. Called automatically
     # by the metal call stack.
-    def process_action(*args)
+    def process_action(*)
       _perform_parameter_wrapping if _wrapper_enabled?
       super
     end
 
     private
-
       # Returns the wrapper key which will be used to store wrapped parameters.
       def _wrapper_key
         _wrapper_options.name
@@ -265,9 +268,11 @@ module ActionController
       def _extract_parameters(parameters)
         if include_only = _wrapper_options.include
           parameters.slice(*include_only)
+        elsif _wrapper_options.exclude
+          exclude = _wrapper_options.exclude + EXCLUDE_PARAMETERS
+          parameters.except(*exclude)
         else
-          exclude = _wrapper_options.exclude || []
-          parameters.except(*(exclude + EXCLUDE_PARAMETERS))
+          parameters.except(*EXCLUDE_PARAMETERS)
         end
       end
 

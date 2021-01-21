@@ -7,13 +7,15 @@ module ActiveRecord::Associations::Builder # :nodoc:
     end
 
     def self.valid_options(options)
-      valid = super + [:as, :touch]
+      valid = super
+      valid += [:as, :foreign_type] if options[:as]
+      valid += [:ensuring_owner_was] if options[:dependent] == :destroy_async
       valid += [:through, :source, :source_type] if options[:through]
       valid
     end
 
     def self.valid_dependent_options
-      [:destroy, :delete, :nullify, :restrict_with_error, :restrict_with_exception]
+      [:destroy, :destroy_async, :delete, :nullify, :restrict_with_error, :restrict_with_exception]
     end
 
     def self.define_callbacks(model, reflection)
@@ -32,15 +34,12 @@ module ActiveRecord::Associations::Builder # :nodoc:
       end
     end
 
-    def self.touch_record(o, name, touch)
-      record = o.send name
+    def self.touch_record(record, name, touch)
+      instance = record.send(name)
 
-      return unless record && record.persisted?
-
-      if touch != true
-        record.touch(touch)
-      else
-        record.touch
+      if instance&.persisted?
+        touch != true ?
+          instance.touch(touch) : instance.touch
       end
     end
 
@@ -48,11 +47,9 @@ module ActiveRecord::Associations::Builder # :nodoc:
       name  = reflection.name
       touch = reflection.options[:touch]
 
-      callback = lambda { |record|
-        HasOne.touch_record(record, name, touch)
-      }
-
+      callback = -> (record) { HasOne.touch_record(record, name, touch) }
       model.after_create callback, if: :saved_changes?
+      model.after_create_commit { association(name).reset_negative_cache }
       model.after_update callback, if: :saved_changes?
       model.after_destroy callback
       model.after_touch callback

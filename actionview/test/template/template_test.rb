@@ -59,7 +59,7 @@ class TestERBTemplate < ActiveSupport::TestCase
 
   def new_template(body = "<%= hello %>", details = {})
     details = { format: :html, locals: [] }.merge details
-    ActionView::Template.new(body.dup, "hello template", details.delete(:handler) || ERBHandler, { virtual_path: "hello" }.merge!(details))
+    ActionView::Template.new(body.dup, "hello template", details.delete(:handler) || ERBHandler, **{ virtual_path: "hello" }.merge!(details))
   end
 
   def render(locals = {})
@@ -119,13 +119,6 @@ class TestERBTemplate < ActiveSupport::TestCase
                              "<%= partial.render(self, {}) %>" \
                              "<%= @virtual_path %>")
     assert_equal "hellopartialhello", render
-  end
-
-  def test_refresh_is_deprecated
-    @template = new_template("Hello", virtual_path: "test/foo/bar", locals: [:key])
-    assert_deprecated do
-      assert_same @template, @template.refresh(@context)
-    end
   end
 
   def test_resulting_string_is_utf8

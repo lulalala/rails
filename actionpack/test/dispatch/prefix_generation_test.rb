@@ -126,12 +126,19 @@ module TestGenerationPrefix
       end
     end
 
+    module KwObject
+      def initialize(kw:)
+      end
+    end
+
     class EngineObject
+      include KwObject
       include ActionDispatch::Routing::UrlFor
       include BlogEngine.routes.url_helpers
     end
 
     class AppObject
+      include KwObject
       include ActionDispatch::Routing::UrlFor
       include RailsApplication.routes.url_helpers
     end
@@ -144,8 +151,8 @@ module TestGenerationPrefix
 
     def setup
       RailsApplication.routes.default_url_options = {}
-      @engine_object = EngineObject.new
-      @app_object = AppObject.new
+      @engine_object = EngineObject.new(kw: 1)
+      @app_object = AppObject.new(kw: 2)
     end
 
     include BlogEngine.routes.mounted_helpers
@@ -304,7 +311,7 @@ module TestGenerationPrefix
       assert_equal "/omg/blog/posts/1", path
     end
 
-    test "[OBJECT] generating engine's route with named helpers" do
+    test "[OBJECT] generating engine's route with named route helpers" do
       path = engine_object.posts_path
       assert_equal "/awesome/blog/posts", path
 

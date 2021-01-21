@@ -19,6 +19,16 @@ module ActiveRecord
       rt
     end
 
+    def strict_loading_violation(event)
+      debug do
+        owner = event.payload[:owner]
+        association = event.payload[:reflection].klass
+        name = event.payload[:reflection].name
+
+        color("Strict loading violation: #{owner} is marked for strict loading. The #{association} association named :#{name} cannot be lazily loaded.", RED)
+      end
+    end
+
     def sql(event)
       self.class.runtime += event.duration
       return unless logger.debug?
@@ -32,15 +42,19 @@ module ActiveRecord
       sql   = payload[:sql]
       binds = nil
 
-      unless (payload[:binds] || []).empty?
+      if payload[:binds]&.any?
         casted_params = type_casted_binds(payload[:type_casted_binds])
-        binds = "  " + payload[:binds].zip(casted_params).map { |attr, value|
-          render_bind(attr, value)
-        }.inspect
+
+        binds = []
+        payload[:binds].each_with_index do |attr, i|
+          binds << render_bind(attr, casted_params[i])
+        end
+        binds = binds.inspect
+        binds.prepend("  ")
       end
 
       name = colorize_payload_name(name, payload[:name])
-      sql  = color(sql, sql_color(sql), true)
+      sql  = color(sql, sql_color(sql), true) if colorize_logging
 
       debug "  #{name}  #{sql}#{binds}"
     end
@@ -51,13 +65,18 @@ module ActiveRecord
       end
 
       def render_bind(attr, value)
-        if attr.is_a?(Array)
+        case attr
+        when ActiveModel::Attribute
+          if attr.type.binary? && attr.value
+            value = "<#{attr.value_for_database.to_s.bytesize} bytes of binary data>"
+          end
+        when Array
           attr = attr.first
-        elsif attr.type.binary? && attr.value
-          value = "<#{attr.value_for_database.to_s.bytesize} bytes of binary data>"
+        else
+          attr = nil
         end
 
-        [attr && attr.name, value]
+        [attr&.name, value]
       end
 
       def colorize_payload_name(name, payload_name)

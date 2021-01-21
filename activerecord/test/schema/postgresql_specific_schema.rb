@@ -104,8 +104,38 @@ _SQL
     t.decimal :decimal_array_default, array: true, default: [1.23, 3.45]
   end
 
+  create_table :uuid_comments, force: true, id: false do |t|
+    t.uuid :uuid, primary_key: true, **uuid_default
+    t.string :content
+  end
+
+  create_table :uuid_entries, force: true, id: false do |t|
+    t.uuid :uuid, primary_key: true, **uuid_default
+    t.string :entryable_type, null: false
+    t.uuid :entryable_uuid, null: false
+  end
+
   create_table :uuid_items, force: true, id: false do |t|
     t.uuid :uuid, primary_key: true, **uuid_default
     t.string :title
+  end
+
+  create_table :uuid_messages, force: true, id: false do |t|
+    t.uuid :uuid, primary_key: true, **uuid_default
+    t.string :subject
+  end
+
+  if supports_partitioned_indexes?
+    create_table(:measurements, id: false, force: true, options: "PARTITION BY LIST (city_id)") do |t|
+      t.string :city_id, null: false
+      t.date :logdate, null: false
+      t.integer :peaktemp
+      t.integer :unitsales
+      t.index [:logdate, :city_id], unique: true
+    end
+    create_table(:measurements_toronto, id: false, force: true,
+                                        options: "PARTITION OF measurements FOR VALUES IN (1)")
+    create_table(:measurements_concepcion, id: false, force: true,
+                                           options: "PARTITION OF measurements FOR VALUES IN (2)")
   end
 end

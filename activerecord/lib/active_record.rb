@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 #--
-# Copyright (c) 2004-2019 David Heinemeier Hansson
+# Copyright (c) 2004-2021 David Heinemeier Hansson
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -31,6 +31,7 @@ require "yaml"
 
 require "active_record/version"
 require "active_model/attribute_set"
+require "active_record/errors"
 
 module ActiveRecord
   extend ActiveSupport::Autoload
@@ -41,6 +42,7 @@ module ActiveRecord
   autoload :ConnectionHandling
   autoload :CounterCache
   autoload :DynamicMatchers
+  autoload :DelegatedType
   autoload :Enum
   autoload :InternalMetadata
   autoload :Explain
@@ -67,18 +69,17 @@ module ActiveRecord
   autoload :Serialization
   autoload :StatementCache
   autoload :Store
+  autoload :SignedId
   autoload :Suppressor
   autoload :Timestamp
   autoload :Transactions
   autoload :Translation
   autoload :Validations
   autoload :SecureToken
-  autoload :DatabaseSelector, "active_record/middleware/database_selector"
+  autoload :DestroyAssociationAsyncJob
 
   eager_autoload do
-    autoload :ActiveRecordError, "active_record/errors"
-    autoload :ConnectionNotEstablished, "active_record/errors"
-    autoload :ConnectionAdapters, "active_record/connection_adapters/abstract_adapter"
+    autoload :ConnectionAdapters
 
     autoload :Aggregations
     autoload :Associations
@@ -136,14 +137,6 @@ module ActiveRecord
     end
   end
 
-  module ConnectionAdapters
-    extend ActiveSupport::Autoload
-
-    eager_autoload do
-      autoload :AbstractAdapter
-    end
-  end
-
   module Scoping
     extend ActiveSupport::Autoload
 
@@ -193,3 +186,4 @@ end
 YAML.load_tags["!ruby/object:ActiveRecord::AttributeSet"] = "ActiveModel::AttributeSet"
 YAML.load_tags["!ruby/object:ActiveRecord::Attribute::FromDatabase"] = "ActiveModel::Attribute::FromDatabase"
 YAML.load_tags["!ruby/object:ActiveRecord::LazyAttributeHash"] = "ActiveModel::LazyAttributeHash"
+YAML.load_tags["!ruby/object:ActiveRecord::ConnectionAdapters::AbstractMysqlAdapter::MysqlString"] = "ActiveRecord::Type::String"

@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "active_support/core_ext/enumerable"
+
 module ActiveRecord
   module TestFixtures
     extend ActiveSupport::Concern
@@ -21,7 +23,6 @@ module ActiveRecord
       class_attribute :use_transactional_tests, default: true
       class_attribute :use_instantiated_fixtures, default: false # true, false, or :no_instances
       class_attribute :pre_loaded_fixtures, default: false
-      class_attribute :config, default: ActiveRecord::Base
       class_attribute :lock_threads, default: true
     end
 
@@ -41,8 +42,9 @@ module ActiveRecord
       def fixtures(*fixture_set_names)
         if fixture_set_names.first == :all
           raise StandardError, "No fixture path found. Please set `#{self}.fixture_path`." if fixture_path.blank?
-          fixture_set_names = Dir["#{fixture_path}/{**,*}/*.{yml}"].uniq
-          fixture_set_names.map! { |f| f[(fixture_path.to_s.size + 1)..-5] }
+          fixture_set_names = Dir[::File.join(fixture_path, "{**,*}/*.{yml}")].uniq
+          fixture_set_names.reject! { |f| f.start_with?(file_fixture_path.to_s) } if defined?(file_fixture_path) && file_fixture_path
+          fixture_set_names.map! { |f| f[fixture_path.to_s.size..-5].delete_prefix("/") }
         else
           fixture_set_names = fixture_set_names.flatten.map(&:to_s)
         end
@@ -97,7 +99,7 @@ module ActiveRecord
 
     def run_in_transaction?
       use_transactional_tests &&
-        !self.class.uses_transaction?(method_name)
+        !self.class.uses_transaction?(name)
     end
 
     def setup_fixtures(config = ActiveRecord::Base)
@@ -129,10 +131,12 @@ module ActiveRecord
         # When connections are established in the future, begin a transaction too
         @connection_subscriber = ActiveSupport::Notifications.subscribe("!connection.active_record") do |_, _, _, _, payload|
           spec_name = payload[:spec_name] if payload.key?(:spec_name)
+          shard = payload[:shard] if payload.key?(:shard)
+          setup_shared_connection_pool
 
           if spec_name
             begin
-              connection = ActiveRecord::Base.connection_handler.retrieve_connection(spec_name)
+              connection = ActiveRecord::Base.connection_handler.retrieve_connection(spec_name, shard: shard)
             rescue ConnectionNotEstablished
               connection = nil
             end
@@ -179,7 +183,6 @@ module ActiveRecord
     end
 
     private
-
       # Shares the writing connection pool with connections on
       # other handlers.
       #
@@ -187,22 +190,41 @@ module ActiveRecord
       # need to share a connection pool so that the reading connection
       # can see data in the open transaction on the writing connection.
       def setup_shared_connection_pool
-        writing_handler = ActiveRecord::Base.connection_handler
+        if ActiveRecord::Base.legacy_connection_handling
+          writing_handler = ActiveRecord::Base.connection_handlers[ActiveRecord::Base.writing_role]
 
-        ActiveRecord::Base.connection_handlers.values.each do |handler|
-          if handler != writing_handler
-            handler.connection_pool_list.each do |pool|
-              name = pool.spec.name
-              writing_connection = writing_handler.retrieve_connection_pool(name)
-              handler.send(:owner_to_pool)[name] = writing_connection
+          ActiveRecord::Base.connection_handlers.values.each do |handler|
+            if handler != writing_handler
+              handler.connection_pool_names.each do |name|
+                writing_pool_manager = writing_handler.send(:owner_to_pool_manager)[name]
+                return unless writing_pool_manager
+
+                pool_manager = handler.send(:owner_to_pool_manager)[name]
+                pool_manager.shard_names.each do |shard_name|
+                  writing_pool_config = writing_pool_manager.get_pool_config(nil, shard_name)
+                  pool_manager.set_pool_config(nil, shard_name, writing_pool_config)
+                end
+              end
+            end
+          end
+        else
+          handler = ActiveRecord::Base.connection_handler
+
+          handler.connection_pool_names.each do |name|
+            pool_manager = handler.send(:owner_to_pool_manager)[name]
+            pool_manager.shard_names.each do |shard_name|
+              writing_pool_config = pool_manager.get_pool_config(ActiveRecord::Base.writing_role, shard_name)
+              pool_manager.role_names.each do |role|
+                next unless pool_manager.get_pool_config(role, shard_name)
+                pool_manager.set_pool_config(role, shard_name, writing_pool_config)
+              end
             end
           end
         end
       end
 
       def load_fixtures(config)
-        fixtures = ActiveRecord::FixtureSet.create_fixtures(fixture_path, fixture_table_names, fixture_class_names, config)
-        Hash[fixtures.map { |f| [f.name, f] }]
+        ActiveRecord::FixtureSet.create_fixtures(fixture_path, fixture_table_names, fixture_class_names, config).index_by(&:name)
       end
 
       def instantiate_fixtures

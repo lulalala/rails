@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "active_support/core_ext/array/wrap"
-
 module ActiveRecord
   module Associations
     # = Active Record Associations
@@ -56,6 +54,10 @@ module ActiveRecord
         @inversed = false
       end
 
+      def reset_negative_cache # :nodoc:
+        reset if loaded? && target.nil?
+      end
+
       # Reloads the \target and returns +self+ on success.
       # The QueryCache is cleared if +force+ is true.
       def reload(force = false)
@@ -95,7 +97,11 @@ module ActiveRecord
       end
 
       def scope
-        target_scope.merge!(association_scope)
+        if (scope = klass.current_scope) && scope.try(:proxy_association) == self
+          scope.spawn
+        else
+          target_scope.merge!(association_scope)
+        end
       end
 
       def reset_scope
@@ -128,7 +134,15 @@ module ActiveRecord
         self.target = record
         @inversed = !!record
       end
-      alias :inversed_from_queries :inversed_from
+
+      def inversed_from_queries(record)
+        if inversable?(record)
+          self.target = record
+          @inversed = true
+        else
+          @inversed = false
+        end
+      end
 
       # Returns the class of the target. belongs_to polymorphic overrides this to look at the
       # polymorphic_type field on the owner.
@@ -187,27 +201,30 @@ module ActiveRecord
         set_inverse_instance(record)
       end
 
-      def create(attributes = {}, &block)
+      def create(attributes = nil, &block)
         _create_record(attributes, &block)
       end
 
-      def create!(attributes = {}, &block)
+      def create!(attributes = nil, &block)
         _create_record(attributes, true, &block)
       end
 
       private
         def find_target
+          if (owner.strict_loading? || reflection.strict_loading?) && owner.validation_context.nil?
+            Base.strict_loading_violation!(owner: owner.class, reflection: reflection)
+          end
+
           scope = self.scope
           return scope.to_a if skip_statement_cache?(scope)
 
-          conn = klass.connection
-          sc = reflection.association_scope_cache(conn, owner) do |params|
+          sc = reflection.association_scope_cache(klass, owner) do |params|
             as = AssociationScope.create { params.bind }
             target_scope.merge!(as.scope(self))
           end
 
           binds = AssociationScope.get_bind_values(owner, reflection.chain)
-          sc.execute(binds, conn) { |record| set_inverse_instance(record) } || []
+          sc.execute(binds, klass.connection) { |record| set_inverse_instance(record) }
         end
 
         # The scope for this association.
@@ -234,25 +251,6 @@ module ActiveRecord
 
         def find_target?
           !loaded? && (!owner.new_record? || foreign_key_present?) && klass
-        end
-
-        def creation_attributes
-          attributes = {}
-
-          if (reflection.has_one? || reflection.collection?) && !options[:through]
-            attributes[reflection.foreign_key] = owner[reflection.active_record_primary_key]
-
-            if reflection.type
-              attributes[reflection.type] = owner.class.polymorphic_name
-            end
-          end
-
-          attributes
-        end
-
-        # Sets the owner attributes on the given record
-        def set_owner_attributes(record)
-          creation_attributes.each { |key, value| record[key] = value }
         end
 
         # Returns true if there is a foreign key present on the owner which
@@ -302,7 +300,7 @@ module ActiveRecord
 
         # Returns true if record contains the foreign_key
         def foreign_key_for?(record)
-          record.has_attribute?(reflection.foreign_key)
+          record._has_attribute?(reflection.foreign_key)
         end
 
         # This should be implemented to return the values of the relevant key(s) on the owner,
@@ -326,6 +324,24 @@ module ActiveRecord
             scope.eager_loading? ||
             klass.scope_attributes? ||
             reflection.source_reflection.active_record.default_scopes.any?
+        end
+
+        def enqueue_destroy_association(options)
+          owner.class.destroy_association_async_job&.perform_later(**options)
+        end
+
+        def inversable?(record)
+          record &&
+            ((!record.persisted? || !owner.persisted?) || matches_foreign_key?(record))
+        end
+
+        def matches_foreign_key?(record)
+          if foreign_key_for?(record)
+            record.read_attribute(reflection.foreign_key) == owner.id ||
+              (foreign_key_for?(owner) && owner.read_attribute(reflection.foreign_key) == record.id)
+          else
+            owner.read_attribute(reflection.foreign_key) == record.id
+          end
         end
     end
   end

@@ -12,6 +12,7 @@ module ActiveRecord
       def setup
         super
         @connection = ActiveRecord::Base.connection
+        @schema_migration = @connection.schema_migration
         @verbose_was = ActiveRecord::Migration.verbose
         ActiveRecord::Migration.verbose = false
 
@@ -38,7 +39,7 @@ module ActiveRecord
         }.new
 
         assert connection.index_exists?(:testings, :foo, name: "custom_index_name")
-        assert_raise(StandardError) { ActiveRecord::Migrator.new(:up, [migration]).migrate }
+        assert_raise(StandardError) { ActiveRecord::Migrator.new(:up, [migration], @schema_migration).migrate }
         assert connection.index_exists?(:testings, :foo, name: "custom_index_name")
       end
 
@@ -53,7 +54,7 @@ module ActiveRecord
         }.new
 
         assert connection.index_exists?(:testings, :bar)
-        ActiveRecord::Migrator.new(:up, [migration]).migrate
+        ActiveRecord::Migrator.new(:up, [migration], @schema_migration).migrate
         assert_not connection.index_exists?(:testings, :bar)
       end
 
@@ -67,7 +68,7 @@ module ActiveRecord
           end
         }.new
 
-        ActiveRecord::Migrator.new(:up, [migration]).migrate
+        ActiveRecord::Migrator.new(:up, [migration], @schema_migration).migrate
 
         assert_not connection.index_exists?(:more_testings, :foo_id)
         assert_not connection.index_exists?(:more_testings, :bar_id)
@@ -84,7 +85,7 @@ module ActiveRecord
           end
         }.new
 
-        ActiveRecord::Migrator.new(:up, [migration]).migrate
+        ActiveRecord::Migrator.new(:up, [migration], @schema_migration).migrate
 
         assert connection.column_exists?(:more_testings, :created_at, null: true)
         assert connection.column_exists?(:more_testings, :updated_at, null: true)
@@ -101,7 +102,7 @@ module ActiveRecord
           end
         }.new
 
-        ActiveRecord::Migrator.new(:up, [migration]).migrate
+        ActiveRecord::Migrator.new(:up, [migration], @schema_migration).migrate
 
         assert connection.column_exists?(:testings, :created_at, null: true)
         assert connection.column_exists?(:testings, :updated_at, null: true)
@@ -117,7 +118,7 @@ module ActiveRecord
             end
           }.new
 
-          ActiveRecord::Migrator.new(:up, [migration]).migrate
+          ActiveRecord::Migrator.new(:up, [migration], @schema_migration).migrate
 
           assert connection.column_exists?(:testings, :created_at, null: true)
           assert connection.column_exists?(:testings, :updated_at, null: true)
@@ -131,7 +132,7 @@ module ActiveRecord
           end
         }.new
 
-        ActiveRecord::Migrator.new(:up, [migration]).migrate
+        ActiveRecord::Migrator.new(:up, [migration], @schema_migration).migrate
 
         assert connection.column_exists?(:testings, :created_at, null: true)
         assert connection.column_exists?(:testings, :updated_at, null: true)
@@ -146,7 +147,7 @@ module ActiveRecord
           end
         }.new
 
-        ActiveRecord::Migrator.new(:up, [migration]).migrate
+        ActiveRecord::Migrator.new(:up, [migration], @schema_migration).migrate
 
         assert connection.column_exists?(:more_testings, :created_at, null: false, **precision_implicit_default)
         assert connection.column_exists?(:more_testings, :updated_at, null: false, **precision_implicit_default)
@@ -163,7 +164,7 @@ module ActiveRecord
           end
         }.new
 
-        ActiveRecord::Migrator.new(:up, [migration]).migrate
+        ActiveRecord::Migrator.new(:up, [migration], @schema_migration).migrate
 
         assert connection.column_exists?(:testings, :created_at, null: false, **precision_implicit_default)
         assert connection.column_exists?(:testings, :updated_at, null: false, **precision_implicit_default)
@@ -179,7 +180,7 @@ module ActiveRecord
             end
           }.new
 
-          ActiveRecord::Migrator.new(:up, [migration]).migrate
+          ActiveRecord::Migrator.new(:up, [migration], @schema_migration).migrate
 
           assert connection.column_exists?(:testings, :created_at, null: false, **precision_implicit_default)
           assert connection.column_exists?(:testings, :updated_at, null: false, **precision_implicit_default)
@@ -193,7 +194,7 @@ module ActiveRecord
           end
         }.new
 
-        ActiveRecord::Migrator.new(:up, [migration]).migrate
+        ActiveRecord::Migrator.new(:up, [migration], @schema_migration).migrate
 
         assert connection.column_exists?(:testings, :created_at, null: false, **precision_implicit_default)
         assert connection.column_exists?(:testings, :updated_at, null: false, **precision_implicit_default)
@@ -203,7 +204,7 @@ module ActiveRecord
         e = assert_raises(StandardError) do
           class_eval("class LegacyMigration < ActiveRecord::Migration; end")
         end
-        assert_match(/LegacyMigration < ActiveRecord::Migration\[4\.2\]/, e.message)
+        assert_match(/LegacyMigration < ActiveRecord::Migration\[\d\.\d\]/, e.message)
       end
 
       def test_legacy_migrations_not_raise_exception_on_reverting_transaction
@@ -230,7 +231,7 @@ module ActiveRecord
             end
           }.new
 
-          ActiveRecord::Migrator.new(:up, [migration]).migrate
+          ActiveRecord::Migrator.new(:up, [migration], @schema_migration).migrate
           assert connection.column_exists?(:testings, :foo, comment: "comment")
         end
 
@@ -243,7 +244,7 @@ module ActiveRecord
             end
           }.new
 
-          ActiveRecord::Migrator.new(:up, [migration]).migrate
+          ActiveRecord::Migrator.new(:up, [migration], @schema_migration).migrate
 
           assert_equal "comment", connection.table_comment("testings")
         end
@@ -261,11 +262,77 @@ module ActiveRecord
           }.new
 
           Testing.create!
-          ActiveRecord::Migrator.new(:up, [migration]).migrate
+          ActiveRecord::Migrator.new(:up, [migration], @schema_migration).migrate
           assert_equal ["foobar"], Testing.all.map(&:foo)
         ensure
           ActiveRecord::Base.clear_cache!
         end
+      end
+
+      def test_create_table_with_polymorphic_reference_uses_all_column_names_in_index
+        migration = Class.new(ActiveRecord::Migration[6.0]) {
+          def migrate(x)
+            create_table :more_testings do |t|
+              t.references :widget, polymorphic: true, index: true
+              t.belongs_to :gizmo, polymorphic: true, index: true
+            end
+          end
+        }.new
+
+        ActiveRecord::Migrator.new(:up, [migration], @schema_migration).migrate
+
+        assert connection.index_exists?(:more_testings, [:widget_type, :widget_id], name: :index_more_testings_on_widget_type_and_widget_id)
+        assert connection.index_exists?(:more_testings, [:gizmo_type, :gizmo_id], name: :index_more_testings_on_gizmo_type_and_gizmo_id)
+      ensure
+        connection.drop_table :more_testings rescue nil
+      end
+
+      def test_change_table_with_polymorphic_reference_uses_all_column_names_in_index
+        migration = Class.new(ActiveRecord::Migration[6.0]) {
+          def migrate(x)
+            change_table :testings do |t|
+              t.references :widget, polymorphic: true, index: true
+              t.belongs_to :gizmo, polymorphic: true, index: true
+            end
+          end
+        }.new
+
+        ActiveRecord::Migrator.new(:up, [migration], @schema_migration).migrate
+
+        assert connection.index_exists?(:testings, [:widget_type, :widget_id], name: :index_testings_on_widget_type_and_widget_id)
+        assert connection.index_exists?(:testings, [:gizmo_type, :gizmo_id], name: :index_testings_on_gizmo_type_and_gizmo_id)
+      end
+
+      def test_create_join_table_with_polymorphic_reference_uses_all_column_names_in_index
+        migration = Class.new(ActiveRecord::Migration[6.0]) {
+          def migrate(x)
+            create_join_table :more, :testings do |t|
+              t.references :widget, polymorphic: true, index: true
+              t.belongs_to :gizmo, polymorphic: true, index: true
+            end
+          end
+        }.new
+
+        ActiveRecord::Migrator.new(:up, [migration], @schema_migration).migrate
+
+        assert connection.index_exists?(:more_testings, [:widget_type, :widget_id], name: :index_more_testings_on_widget_type_and_widget_id)
+        assert connection.index_exists?(:more_testings, [:gizmo_type, :gizmo_id], name: :index_more_testings_on_gizmo_type_and_gizmo_id)
+      ensure
+        connection.drop_table :more_testings rescue nil
+      end
+
+      def test_polymorphic_add_reference_uses_all_column_names_in_index
+        migration = Class.new(ActiveRecord::Migration[6.0]) {
+          def migrate(x)
+            add_reference :testings, :widget, polymorphic: true, index: true
+            add_belongs_to :testings, :gizmo, polymorphic: true, index: true
+          end
+        }.new
+
+        ActiveRecord::Migrator.new(:up, [migration], @schema_migration).migrate
+
+        assert connection.index_exists?(:testings, [:widget_type, :widget_id], name: :index_testings_on_widget_type_and_widget_id)
+        assert connection.index_exists?(:testings, [:gizmo_type, :gizmo_id], name: :index_testings_on_gizmo_type_and_gizmo_id)
       end
 
       private

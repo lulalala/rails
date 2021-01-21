@@ -12,7 +12,7 @@ class TestRoutingMapper < ActionDispatch::IntegrationTest
 
   class IpRestrictor
     def self.matches?(request)
-      request.ip =~ /192\.168\.1\.1\d\d/
+      /192\.168\.1\.1\d\d/.match?(request.ip)
     end
   end
 
@@ -492,7 +492,7 @@ class TestRoutingMapper < ActionDispatch::IntegrationTest
       get "/projects/status(.:format)"
     end
 
-    # without dup, additional (and possibly unwanted) values will be present in the options (eg. :host)
+    # without dup, additional (and possibly unwanted) values will be present in the options (e.g. :host)
     original_options = { controller: "projects", action: "status" }
     options = original_options.dup
 
@@ -1382,7 +1382,7 @@ class TestRoutingMapper < ActionDispatch::IntegrationTest
     assert_equal "projects#index", @response.body
   end
 
-  def test_optionally_scoped_root_unscoped_access
+  def test_optional_scoped_root_hierarchy
     draw do
       scope "(:locale)" do
         scope "(:platform)" do
@@ -1394,8 +1394,81 @@ class TestRoutingMapper < ActionDispatch::IntegrationTest
     end
 
     assert_equal "/", root_path
+    assert_equal "/en", root_path(locale: "en")
+    assert_equal "/en/osx", root_path(locale: "en", platform: "osx")
+    assert_equal "/en/osx/chrome",
+      root_path(locale: "en", platform: "osx", browser: "chrome")
+
     get "/"
     assert_equal "projects#index", @response.body
+
+    get "/en"
+    assert_equal "projects#index", @response.body
+
+    get "/en/osx"
+    assert_equal "projects#index", @response.body
+
+    get "/en/osx/chrome"
+    assert_equal "projects#index", @response.body
+  end
+
+  def test_optional_scoped_root_multiple_choice
+    draw do
+      scope "(:locale)" do
+        scope "(p/:platform)" do
+          scope "(b/:browser)" do
+            root to: "projects#index"
+          end
+        end
+      end
+    end
+
+    # Note, in this particular case where we rely on pattern matching instead
+    # of hierarchy to match parameters in a root path, root_path returns ""
+    # when given no path parameters.
+
+    assert_equal "/en", root_path(locale: "en")
+    assert_equal "/p/osx", root_path(platform: "osx")
+    assert_equal "/en/p/osx", root_path(locale: "en", platform: "osx")
+    assert_equal "/b/chrome", root_path(browser: "chrome")
+    assert_equal "/en/b/chrome", root_path(locale: "en", browser: "chrome")
+    assert_equal "/p/osx/b/chrome",
+      root_path(platform: "osx", browser: "chrome")
+    assert_equal "/en/p/osx/b/chrome",
+      root_path(locale: "en", platform: "osx", browser: "chrome")
+
+    get "/en"
+    assert_equal "projects#index", @response.body
+
+    get "/p/osx"
+    assert_equal "projects#index", @response.body
+
+    get "/en/p/osx"
+    assert_equal "projects#index", @response.body
+
+    get "/b/chrome"
+    assert_equal "projects#index", @response.body
+
+    get "/en/b/chrome"
+    assert_equal "projects#index", @response.body
+
+    get "/p/osx/b/chrome"
+    assert_equal "projects#index", @response.body
+
+    get "/en/p/osx/b/chrome"
+    assert_equal "projects#index", @response.body
+  end
+
+  def test_optional_part_of_segment
+    draw do
+      get "/star-trek(-tng)/:episode", to: "star_trek#show"
+    end
+
+    get "/star-trek/02-15-the-trouble-with-tribbles"
+    assert_equal "star_trek#show", @response.body
+
+    get "/star-trek-tng/05-02-darmok"
+    assert_equal "star_trek#show", @response.body
   end
 
   def test_scope_with_format_option
@@ -3810,7 +3883,6 @@ class TestRoutingMapper < ActionDispatch::IntegrationTest
   end
 
 private
-
   def draw(&block)
     self.class.stub_controllers do |routes|
       routes.default_url_options = { host: "www.example.com" }
@@ -3824,7 +3896,7 @@ private
   end
 
   def method_missing(method, *args, &block)
-    if method.to_s =~ /_(path|url)$/
+    if method.to_s.match?(/_(path|url)$/)
       @app.routes.url_helpers.send(method, *args, &block)
     else
       super
@@ -4499,9 +4571,7 @@ end
 
 class TestInvalidUrls < ActionDispatch::IntegrationTest
   class FooController < ActionController::Base
-    def self.binary_params_for?(action)
-      action == "show"
-    end
+    param_encoding :show, :id, Encoding::ASCII_8BIT
 
     def show
       render plain: "foo#show"
@@ -4535,14 +4605,33 @@ class TestInvalidUrls < ActionDispatch::IntegrationTest
     end
   end
 
-  test "params encoded with binary_params_for? are treated as ASCII 8bit" do
+  test "params param_encoding uses ASCII 8bit" do
     with_routing do |set|
       set.draw do
         get "/foo/show(/:id)", to: "test_invalid_urls/foo#show"
+        get "/bar/show(/:id)", controller: "test_invalid_urls/foo", action: "show"
       end
 
       get "/foo/show/%E2%EF%BF%BD%A6"
       assert_response :ok
+
+      get "/bar/show/%E2%EF%BF%BD%A6"
+      assert_response :ok
+    end
+  end
+
+  test "does not encode params besides id" do
+    with_routing do |set|
+      set.draw do
+        get "/foo/show(/:id)", to: "test_invalid_urls/foo#show"
+        get "/bar/show(/:id)", controller: "test_invalid_urls/foo", action: "show"
+      end
+
+      get "/foo/show/%E2%EF%BF%BD%A6?something_else=%E2%EF%BF%BD%A6"
+      assert_response :bad_request
+
+      get "/foo/show/%E2%EF%BF%BD%A6?something_else=%E2%EF%BF%BD%A6"
+      assert_response :bad_request
     end
   end
 end
@@ -4808,7 +4897,7 @@ class TestUrlGenerationErrors < ActionDispatch::IntegrationTest
     message = "No route matches #{url.inspect}, possible unmatched constraints: #{missing.inspect}"
 
     error = assert_raises(ActionController::UrlGenerationError, message) { product_path(id: nil) }
-    assert_equal message, error.message
+    assert_match message, error.message
   end
 
   test "URL helpers raise message with mixed parameters when generation fails" do
@@ -4817,11 +4906,28 @@ class TestUrlGenerationErrors < ActionDispatch::IntegrationTest
 
     # Optimized URL helper
     error = assert_raises(ActionController::UrlGenerationError) { product_path(nil, "id" => "url-tested") }
-    assert_equal message, error.message
+    assert_match message, error.message
 
     # Non-optimized URL helper
     error = assert_raises(ActionController::UrlGenerationError, message) { product_path(id: nil, "id" => "url-tested") }
-    assert_equal message, error.message
+    assert_match message, error.message
+  end
+
+  if defined?(DidYouMean) && DidYouMean.respond_to?(:correct_error)
+    test "exceptions have suggestions for fix" do
+      error = assert_raises(ActionController::UrlGenerationError) { product_path(nil, "id" => "url-tested") }
+      assert_match "Did you mean?", error.message
+    end
+  end
+
+  # FIXME: we should fix all locations that raise this exception to provide
+  # the info DidYouMean needs and then delete this test.  Just adding the
+  # test for now because some parameters to the constructor are optional, and
+  # we don't want to break other code.
+  test "correct for empty UrlGenerationError" do
+    err = ActionController::UrlGenerationError.new("oh no!")
+    correction = ActionController::UrlGenerationError::Correction.new(err)
+    assert_equal [], correction.corrections
   end
 end
 
@@ -4953,10 +5059,50 @@ class TestPartialDynamicPathSegments < ActionDispatch::IntegrationTest
   end
 
   private
-
     def assert_params(params)
       assert_equal(params, request.path_parameters)
     end
+end
+
+class TestOptionalScopesWithOrWithoutParams < ActionDispatch::IntegrationTest
+  Routes = ActionDispatch::Routing::RouteSet.new.tap do |app|
+    app.draw do
+      scope module: "test_optional_scopes_with_or_without_params" do
+        scope "(:locale)", locale: /en|es/ do
+          get "home", controller: :home, action: :index
+          get "with_param/:foo", to: "home#with_param", as: "with_param"
+          get "without_param", to: "home#without_param"
+        end
+      end
+    end
+  end
+
+  class HomeController < ActionController::Base
+    include Routes.url_helpers
+
+    def index
+      render inline: "<%= with_param_path(foo: 'bar') %> | <%= without_param_path %>"
+    end
+
+    def with_param; end
+    def without_param; end
+  end
+
+  APP = build_app Routes
+
+  def app
+    APP
+  end
+
+  def test_stays_unscoped_with_or_without_params
+    get "/home"
+    assert_equal "/with_param/bar | /without_param", response.body
+  end
+
+  def test_preserves_scope_with_or_without_params
+    get "/es/home"
+    assert_equal "/es/with_param/bar | /es/without_param", response.body
+  end
 end
 
 class TestPathParameters < ActionDispatch::IntegrationTest
@@ -5098,7 +5244,7 @@ class TestRecognizePath < ActionDispatch::IntegrationTest
     end
 
     def matches?(request)
-      request.path_parameters[key] =~ pattern
+      pattern.match?(request.path_parameters[key])
     end
   end
 
@@ -5108,8 +5254,8 @@ class TestRecognizePath < ActionDispatch::IntegrationTest
       get "/hash/:foo", to: "pages#show", constraints: { foo: /foo/ }
       get "/hash/:bar", to: "pages#show", constraints: { bar: /bar/ }
 
-      get "/proc/:foo", to: "pages#show", constraints: proc { |r| r.path_parameters[:foo] =~ /foo/ }
-      get "/proc/:bar", to: "pages#show", constraints: proc { |r| r.path_parameters[:bar] =~ /bar/ }
+      get "/proc/:foo", to: "pages#show", constraints: proc { |r| /foo/.match?(r.path_parameters[:foo]) }
+      get "/proc/:bar", to: "pages#show", constraints: proc { |r| /bar/.match?(r.path_parameters[:bar]) }
 
       get "/class/:foo", to: "pages#show", constraints: PageConstraint.new(:foo, /foo/)
       get "/class/:bar", to: "pages#show", constraints: PageConstraint.new(:bar, /bar/)
@@ -5143,7 +5289,6 @@ class TestRecognizePath < ActionDispatch::IntegrationTest
   end
 
   private
-
     def recognize_path(*args)
       Routes.recognize_path(*args)
     end

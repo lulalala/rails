@@ -1,12 +1,5 @@
 # frozen_string_literal: true
 
-require "active_support/deprecation"
-
-# Remove this deprecated class in the next minor version
-#:nodoc:
-SourceAnnotationExtractor = ActiveSupport::Deprecation::DeprecatedConstantProxy.
-  new("SourceAnnotationExtractor", "Rails::SourceAnnotationExtractor")
-
 module Rails
   # Implements the logic behind <tt>Rails::Command::NotesCommand</tt>. See <tt>rails notes --help</tt> for usage information.
   #
@@ -64,13 +57,6 @@ module Rails
         s << "[#{tag}] " if options[:tag]
         s << text
       end
-
-      # Used in annotations.rake
-      #:nodoc:
-      def self.notes_task_deprecation_warning
-        ActiveSupport::Deprecation.warn("This rake task is deprecated and will be removed in Rails 6.1. \nRefer to `rails notes --help` for more information.\n")
-        puts "\n"
-      end
     end
 
     # Prints all annotations with tag +tag+ under the root directories +app+,
@@ -114,7 +100,7 @@ module Rails
       results = {}
 
       Dir.glob("#{dir}/*") do |item|
-        next if File.basename(item)[0] == ?.
+        next if File.basename(item).start_with?(".")
 
         if File.directory?(item)
           results.update(find_in(item))
