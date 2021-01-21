@@ -1821,32 +1821,32 @@ end
 
 class TestAutosaveAssociationValidationErrorMessage < ActiveRecord::TestCase
   Order.class_eval do
-    has_many :entries, index_errors: true
-    accepts_nested_attributes_for :entries
+    has_many :order_entries, index_errors: true
+    accepts_nested_attributes_for :order_entries
   end
 
   def setup
-    @order = Order.create!(entries_attributes: [
+    @order = Order.create!(order_entries_attributes: [
       { title: "entry_1" },
       { title: "entry_2" }])
-    @entry_1 = @order.entries.first
-    @entry_2 = @order.entries.last
+    @entry_1 = @order.order_entries.first
+    @entry_2 = @order.order_entries.last
   end
 
   def test_update_both_entries_with_invalid_second
-    @order.update(entries_attributes: [
-      { id: @entry_1.id, title: "entry_1_updted" },
+    @order.update(order_entries_attributes: [
+      { id: @entry_1.id, title: "order_entry_1_updted" },
       { id: @entry_2.id, title: "" }])
     assert_equal 1, @order.errors.count
     assert_equal "entries[1].title", @order.errors.messages.keys.first.to_s
   end
 
   def test_update_only_second_entry_with_invalid_second
-    @order.update(entries_attributes: [
-      { id: @entry_1.id, title: "entry_1" },
+    @order.update(order_entries_attributes: [
+      { id: @entry_1.id, title: "order_entry_1" },
       { id: @entry_2.id, title: "" }])
     assert_equal 1, @order.errors.count
-    assert_equal "entries[1].title", @order.errors.messages.keys.first.to_s
+    assert_equal "order_entries[1].title", @order.errors.messages.keys.first.to_s
   end
 end
 
