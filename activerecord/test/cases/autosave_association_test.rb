@@ -1954,7 +1954,7 @@ class TestAutosaveAssociationValidationErrorMessage < ActiveRecord::TestCase
       { id: @entry_1.id, title: "order_entry_1_updted" },
       { id: @entry_2.id, title: "" }])
     assert_equal 1, @order.errors.count
-    assert_equal "entries[1].title", @order.errors.messages.keys.first.to_s
+    assert_equal "order_entries[1].title", @order.errors.messages.keys.first.to_s
   end
 
   def test_update_only_second_entry_with_invalid_second
